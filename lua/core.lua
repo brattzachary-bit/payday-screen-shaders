@@ -7,12 +7,10 @@
 	finished and the HUD is about to be drawn, and runs shaders/pss.hlsl there. So every effect
 	lands on the game world and never on the HUD or menus.
 
-	Settings reach the plugin through a FILE, not a Lua table. The released SuperBLT
-	(4.0.2-beta) gives native plugins no Lua functions, so a plugin cannot return an API to
-	Lua at all; the first version of this mod relied on that and silently did nothing. This
-	file writes mods/saves/pss_live.txt and the plugin polls it (native/src/bridge.cpp). The
-	plugin clamps every value itself too, so nothing written here can put the renderer
-	somewhere invalid.
+	Live settings, camera and status use a negotiated native memory bridge on supported
+	SuperBLT builds. Older native/loader combinations retain the original file bridge.
+	Persistent settings and diagnostic logs still use their normal files. The native
+	consumer retains the original parsers, clamping and render-time camera history.
 ]]
 
 if _G.PSS then
@@ -22,7 +20,7 @@ end
 local PSS = {}
 _G.PSS = PSS
 
-PSS.VERSION = "0.8.0"
+PSS.VERSION = "0.9.0"
 PSS.mod_path = ModPath
 PSS.save_path = SavePath .. "pss_settings.json"
 PSS.live_path = SavePath .. "pss_live.txt"      -- the plugin reads mods/saves/pss_live.txt
@@ -485,9 +483,51 @@ function PSS:luts()
 	return list
 end
 
--- Loads the plugin once per game session. Its return values are not used: see the header.
+-- Loads once and negotiates live transport. A temporarily inactive Lua state
+-- may retry its supported handshake; it never replays old files while pending.
+local function native_retry_time()
+	local wall = TimerManager and TimerManager.wall and TimerManager:wall()
+	return wall and wall:time() or os.clock()
+end
+
+-- Missing tables can be temporary even when the DLL is already resident.
+function PSS:_accept_native_api(api)
+	if type(api) ~= "table" or api.capability ~= "memory-v1" or
+		type(api.begin_memory) ~= "function" or type(api.publish_camera) ~= "function" or
+		type(api.publish_settings) ~= "function" or type(api.status_text) ~= "function" or
+		type(api.bridge_status) ~= "function" then return false end
+	self._native_api, self._api_lookup_pending, self._api_retry_at = api, nil, nil
+	local called, ready = pcall(api.begin_memory)
+	self._ipc_mode = called and ready == true and "memory" or "memory_failed"
+	return true
+end
+
+-- Only from the main thread: a coroutine's state gets no table from the loader. Lua 5.1 says
+-- "nil" for the main thread, 5.2-style builds say "thread, true"; both are read here.
+local function in_coroutine()
+	local co, is_main = coroutine.running()
+
+	return co ~= nil and not is_main
+end
+
+function PSS:_retry_native_api()
+	if in_coroutine() or not blt or not blt.load_native then return end
+	local now = native_retry_time()
+	local remaining = (self._api_retry_at or now) - now
+	if remaining > 0 and remaining <= 1 then return end
+	self._api_retry_at = now + 1
+	local ok, _, api = pcall(blt.load_native, self.dll_path)
+	if ok then self:_accept_native_api(api) end
+end
+
 function PSS:native()
 	if self._native ~= nil then
+		if self._native and self._api_lookup_pending then
+			self:_retry_native_api()
+		elseif self._ipc_mode == "memory_failed" and self._native_api then
+			local called, ready = pcall(self._native_api.begin_memory)
+			if called and ready == true then self._ipc_mode = "memory" end
+		end
 		return self._native
 	end
 
@@ -503,7 +543,7 @@ function PSS:native()
 		return false
 	end
 
-	local ok, result = pcall(blt.load_native, self.dll_path)
+	local ok, result, api = pcall(blt.load_native, self.dll_path)
 
 	if not ok then
 		self:log("native plugin failed to load: %s", tostring(result))
@@ -511,7 +551,11 @@ function PSS:native()
 	end
 
 	self._native = true
-	self:log("native plugin loaded (%s)", tostring(result))
+	self._ipc_mode = "file"
+	if not self:_accept_native_api(api) then
+		self._api_lookup_pending, self._api_retry_at = true, native_retry_time() + 1
+	end
+	self:log("native plugin loaded (%s), live transport %s", tostring(result), self._ipc_mode)
 
 	return true
 end
@@ -537,6 +581,34 @@ function PSS:live_value(param)
 	end
 
 	return v
+end
+
+-- Memory is selected once for this session. A rejected packet never revives
+-- a stale file from a previous session. Unsupported native builds keep files.
+function PSS:publish_memory(kind, text)
+	if self._ipc_mode == "memory" then
+		local called, accepted = pcall(self._native_api["publish_" .. kind], text)
+		if not called or accepted ~= true then
+			if not self._ipc_rejected then
+				self._ipc_rejected = true
+				self:log("native %s packet rejected; retaining the previous native state", kind)
+			end
+		end
+		return true
+	end
+	return self._ipc_mode == "memory_failed"
+end
+
+function PSS:read_status()
+	if not self:native() then return nil end
+	if self._ipc_mode == "memory" then
+		local ok, text = pcall(self._native_api.status_text)
+		return ok and type(text) == "string" and text or nil
+	end
+	if self._ipc_mode == "memory_failed" then return nil end
+	local file = io.open(self.status_path, "r")
+	if not file then return nil end
+	local text = file:read("*a"); file:close(); return text
 end
 
 function PSS:native_value(param, v)
@@ -645,10 +717,12 @@ function PSS:write_bridge()
 	table.insert(lines, "end")
 	table.insert(lines, "")
 
+	local text = table.concat(lines, "\n")
+	if self:publish_memory("settings", text) then return end
 	local f = io.open(self.live_path, "w")
 
 	if f then
-		f:write(table.concat(lines, "\n"))
+		f:write(text)
 		f:close()
 	end
 end
@@ -983,10 +1057,12 @@ function PSS:write_camera()
 		table.remove(lines, 1)
 	end
 
+	local text = table.concat(lines)
+	if self:publish_memory("camera", text) then return end
 	local f = io.open(self.camera_path, "w")
 
 	if f then
-		f:write(table.concat(lines))
+		f:write(text)
 		f:close()
 	end
 end
@@ -1201,16 +1277,11 @@ function PSS:poll_status(t)
 
 	self._status_checked = t
 
-	local f = io.open(self.status_path, "r")
-
-	if not f then
+	local text = self:read_status()
+	if not text then
 		self._jitter_allowed = false
-
 		return
 	end
-
-	local text = f:read("*a")
-	f:close()
 	self._jitter_allowed = text:match("\nCamera jitter: allowed") ~= nil
 
 	-- Only a rising count counts: the file left from the last session can be read before the plugin
@@ -1230,16 +1301,7 @@ function PSS:status_text()
 		return "The native plugin is not loaded. See the BLT log for why."
 	end
 
-	local f = io.open(self.status_path, "r")
-
-	if not f then
-		return "The plugin has not written its status yet. Try again in a second."
-	end
-
-	local text = f:read("*a")
-	f:close()
-
-	return text
+	return self:read_status() or "The plugin has not written its status yet. Try again in a second."
 end
 
 PSS:load()

@@ -12,6 +12,10 @@ Everything the game needs is in the repository root (`mod.txt`, `lua/`, `shaders
 * `sh dev/nativebuild/build_pss.sh test` also builds the offline native test
   (`dev/nativebuild/test/pss_test.cpp`) into `dev/nativebuild/out/pss_test.exe`. Run it with Wine
   or Proton (it needs a prefix with d3d11 and `libvkd3d*-1.dll`).
+* Known issue (2026-10-18): `dev/nativebuild/test/pss_test.cpp` predates the 0.7.5 fork merge and
+  no longer compiles (it still references the removed Panini/spherical projections and
+  `Effects::MotionTexture`). The DLL build is unaffected; the test needs updating to the current
+  effect chain.
 * Shaders must compile with vkd3d-shader as well as d3dcompiler: under Proton the game's
   `d3dcompiler_47` is Wine's.
 * The DLL cannot be reloaded in a running game: a new build needs a game restart.
@@ -19,6 +23,8 @@ Everything the game needs is in the repository root (`mod.txt`, `lua/`, `shaders
 ## Lua side
 
 `luajit dev/tests/run_pss_tests.lua` runs the headless Lua test suite (no game needed).
+`luajit dev/tests/test_memory_bridge.lua` exercises the memory bridge's Lua side against a mocked
+plugin API (from AndreikaRPM's fork). Both must pass before a release.
 
 ## Assets
 

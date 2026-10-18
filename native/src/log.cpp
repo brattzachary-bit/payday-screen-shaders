@@ -11,6 +11,13 @@ static std::mutex g_mutex;
 static std::string g_path = "mods/logs/pss_native.log";
 static bool g_truncate = true;
 
+void LogSetPath(const char* path)
+{
+	std::lock_guard<std::mutex> lock(g_mutex);
+	g_path = path;
+	g_truncate = true;
+}
+
 void Log(const char* fmt, ...)
 {
 	char buffer[2048];
