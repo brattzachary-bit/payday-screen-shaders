@@ -1,0 +1,4 @@
+# Left out of `git archive` and of the downloads GitHub makes from tags: the game needs none of it.
+dev export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore

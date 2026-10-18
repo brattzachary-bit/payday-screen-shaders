@@ -1,0 +1,16 @@
+# Built by the game on first run; rebuilt whenever pss.hlsl changes.
+shaders/pss.hlsl.cache
+
+# Native build output and offline test runs (dev/nativebuild/build_pss.sh)
+dev/nativebuild/out/
+dev/nativebuild/pfx/
+*.o
+*.obj
+*.exe
+*.pdb
+__pycache__/
+
+# Test harness scratch
+dev/tests/saves/*.txt
+dev/tests/saves/*.json
+.DS_Store

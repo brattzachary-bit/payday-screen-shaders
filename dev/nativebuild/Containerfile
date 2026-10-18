@@ -1,0 +1,3 @@
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf -y install mingw64-gcc-c++ mingw64-headers mingw64-crt mingw64-winpthreads-static cmake ninja-build make && dnf clean all
+WORKDIR /src
