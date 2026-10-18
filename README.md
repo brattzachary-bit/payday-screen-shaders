@@ -2,7 +2,7 @@
 
 Screen shaders for PAYDAY 2 that change the game world only. The HUD and menus are never touched.
 
-The camera, your settings and the plugin's status pass between the mod and its plugin through memory, so nothing is written to your drive while you play; only your preferences are saved to a file. (On a SuperBLT build that cannot hand over the memory interface, the mod falls back to small files and keeps trying.)
+The camera, your settings and the plugin's status pass between the mod and its plugin through memory, so nothing is written to your drive while you play; only your preferences are saved to a file. This needs SuperBLT 4.0.3-beta or newer; on an older SuperBLT the mod falls back to small files and says so in mods/logs/pss_native.log.
 
 A SuperBLT native plugin runs the mod's own shaders at the moment the game has finished drawing the
 world and has not drawn the HUD yet. It is not ReShade and not a tweak of the game's own settings.
