@@ -77,6 +77,14 @@ int BridgeStatusLua(lua_State* L) {
     api.pushstring(L, s.memory ? "memory" : s.pending ? "pending" : "file"); api.setfield(L, -2, "transport");
     api.pushstring(L, MODULE_VERSION); api.setfield(L, -2, "version"); return 1;
 }
+// Stack room is guaranteed anyway: a C function called from Lua always has LUA_MINSTACK (20) free
+// slots, and nothing here needs more than four at once. So the check is a courtesy, taken from
+// whichever name the loader knows (SuperBLT on Linux/Proton 2026-10 offers luaL_checkstack only),
+// or skipped.
+void (*luaLCheckstack)(lua_State*, int, const char*) = nullptr;
+int CheckstackViaAux(lua_State* L, int n) { luaLCheckstack(L, n, "Payday Screen Shaders"); return 1; }
+int CheckstackAssumed(lua_State*, int) { return 1; }
+
 void ResolveApi(void* (*resolve)(const char*)) {
     api = {}; apiReady = false;
     if (!resolve) { Log("loader gave no function lookup; live updates stay on files"); return; }
@@ -84,7 +92,13 @@ void ResolveApi(void* (*resolve)(const char*)) {
     // SuperBLT build leaves the mod on the file bridge.
 #define RESOLVE(member, name) api.member = reinterpret_cast<decltype(api.member)>(resolve(name)); \
     if (!api.member) { Log("loader has no %s; live updates stay on files", name); return; }
-    RESOLVE(checkstack, "lua_checkstack"); RESOLVE(type, "lua_type"); RESOLVE(tolstring, "lua_tolstring");
+    api.checkstack = reinterpret_cast<decltype(api.checkstack)>(resolve("lua_checkstack"));
+    if (!api.checkstack) {
+        luaLCheckstack = reinterpret_cast<decltype(luaLCheckstack)>(resolve("luaL_checkstack"));
+        api.checkstack = luaLCheckstack ? CheckstackViaAux : CheckstackAssumed;
+        Log("loader has no lua_checkstack; using %s", luaLCheckstack ? "luaL_checkstack" : "the guaranteed C call stack room");
+    }
+    RESOLVE(type, "lua_type"); RESOLVE(tolstring, "lua_tolstring");
     RESOLVE(pushboolean, "lua_pushboolean"); RESOLVE(pushnumber, "lua_pushnumber"); RESOLVE(pushstring, "lua_pushstring");
     RESOLVE(createtable, "lua_createtable"); RESOLVE(pushclosure, "lua_pushcclosure"); RESOLVE(setfield, "lua_setfield");
     RESOLVE(active, "is_active_state");
