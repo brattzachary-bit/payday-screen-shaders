@@ -20,6 +20,10 @@ Everything the game needs is in the repository root (`mod.txt`, `lua/`, `shaders
   `d3dcompiler_47` is Wine's.
 * The DLL cannot be reloaded in a running game: a new build needs a game restart.
 
+* `sh dev/nativebuild/build_pss.sh shaders` builds `dev/nativebuild/out/shadercheck.exe`; run it under Wine
+  with the path to `shaders/pss.hlsl` and it compiles every entry point with Wine's d3dcompiler_47
+  (vkd3d-shader), which is what the game uses under Proton. Do this after every shader change.
+
 ## Lua side
 
 `luajit dev/tests/run_pss_tests.lua` runs the headless Lua test suite (no game needed).

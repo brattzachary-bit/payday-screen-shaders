@@ -62,6 +62,7 @@ Effects marked *depth* read the game's depth buffer. Everything else works from 
 | Depth of field (depth) | Focuses on what is under the crosshair, with its own blur size while aiming; your weapon stays sharp | off | off | off | on |
 | Vignette, chromatic aberration, film grain | Lens effects | off | off | off | vignette, chromatic aberration |
 | Lens dirt | Dust on the lens, lit by the bright light in the frame | off | off | off | off |
+| Panini and spherical projection | Straightens verticals, or bows lines like a fisheye, from your real field of view (Lens; the HUD does not follow) | off | off | off | off |
 | Halation | Warm bleed around the brightest highlights | off | off | off | off |
 | Surface grain | Fine grain that moves with the surfaces | off | off | off | off |
 | Motion blur | Blur along the motion found in the picture | off | off | off | on |

@@ -20,7 +20,7 @@ end
 local PSS = {}
 _G.PSS = PSS
 
-PSS.VERSION = "0.9.0"
+PSS.VERSION = "0.10.0"
 PSS.mod_path = ModPath
 PSS.save_path = SavePath .. "pss_settings.json"
 PSS.live_path = SavePath .. "pss_live.txt"      -- the plugin reads mods/saves/pss_live.txt
@@ -116,6 +116,13 @@ PSS.PARAMS = {
 	{key = "vignette", kind = "slider", default = 0.32, min = 0, max = 1, step = 0.02},
 	{key = "chromatic", kind = "slider", default = 0.4, min = 0, max = 1, step = 0.05},
 	{key = "grain", kind = "slider", default = 0, min = 0, max = 1, step = 0.05},
+
+	-- Projections of the finished frame (PS_Final), from the real field of view. Off: they move the
+	-- picture under the HUD, which is drawn afterwards and does not follow.
+	{key = "panini_on", kind = "toggle", default = false, lua_only = true},
+	{key = "panini", kind = "slider", default = 0.45, min = 0, max = 1, step = 0.05, gate = "panini_on"},
+	{key = "spherical_on", kind = "toggle", default = false, lua_only = true},
+	{key = "spherical", kind = "slider", default = 0.3, min = 0, max = 1, step = 0.05, gate = "spherical_on"},
 
 	{key = "obscurance_on", kind = "toggle", default = true, lua_only = true},
 	{key = "obscurance", kind = "slider", default = 1, min = 0, max = 1, step = 0.05, gate = "obscurance_on"},

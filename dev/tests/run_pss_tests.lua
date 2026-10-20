@@ -132,7 +132,13 @@ check("the colour-only shape effects are still on for when there is no depth", P
 
 -- 0.3.0: lens dirt is on but gentle; halation and both projections ship off.
 check("lens dirt is available but off in the shipped look", PSS.BY_KEY.dirt_on.default == false and PSS.BY_KEY.dirt.min == 0)
-check("halation ships off, and the projections are gone for good", PSS.BY_KEY.halation_on.default == false and PSS.BY_KEY.spherical_on == nil and PSS.BY_KEY.panini_on == nil)
+check("halation ships off", PSS.BY_KEY.halation_on.default == false)
+-- 0.10.0: the projections are back (PS_Final, from the real field of view), off until switched on,
+-- in the two constant buffer slots they always had so nothing after them moved.
+check("the projections are back, off by default, and gated by their toggles", PSS.BY_KEY.panini_on and PSS.BY_KEY.panini_on.default == false and PSS.BY_KEY.panini.gate == "panini_on" and PSS.BY_KEY.spherical_on.default == false and PSS.BY_KEY.spherical.gate == "spherical_on")
+check("the projections sit in their old slots 49 and 50", native_order[50] == "panini" and native_order[51] == "spherical", tostring(native_order[50]) .. "," .. tostring(native_order[51]))
+check("a switched-off projection sends 0 to the plugin", PSS:native_value(PSS.BY_KEY.panini, 0.45) == 0 and PSS:native_value(PSS.BY_KEY.spherical, 0.3) == 0)
+check("PS_Final warps through Project() from the camera's field of view", read(ROOT .. "shaders/pss.hlsl"):match("float2 Project%(float2 uv%)") ~= nil and read(ROOT .. "shaders/pss.hlsl"):match("float2 uv = Project%(i%.uv%);") ~= nil and read(ROOT .. "shaders/pss.hlsl"):match("CAMERA_TAN_X, 0%.05") ~= nil)
 local dirt_blob = read(ROOT .. "shaders/lens_dirt.bin")
 check("the lens dirt texture ships with the mod", dirt_blob ~= nil and dirt_blob:sub(1, 4) == "PSSD" and #dirt_blob > 100000, dirt_blob and #dirt_blob)
 

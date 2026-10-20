@@ -54,8 +54,8 @@ enum ParamIndex
 	P_HALATION_THRESHOLD,
 	P_HALATION_TINT,
 	P_HALATION_RADIUS,
-	P_UNUSED_49, // was the Panini projection; kept so the slots after it do not move
-	P_UNUSED_50, // was the spherical projection; kept so the slots after it do not move
+	P_PANINI,    // cylindrical (Panini) projection of the finished frame, from the real field of view
+	P_SPHERICAL, // stereographic (fisheye) projection, likewise
 	P_UPSCALE,           // FSR 1.0: redraw the finished frame larger, then fit it back to the screen
 	P_UPSCALE_SCALE,     // how much larger, 1.25x to 2x
 	P_UPSCALE_SHARPNESS, // RCAS strength, applied at screen size; it replaces CAS while FSR is on

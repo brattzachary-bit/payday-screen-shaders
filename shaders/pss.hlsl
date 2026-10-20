@@ -130,7 +130,8 @@ SamplerState Point : register(s1);
 #define HALATION_THRESHOLD P[11].z
 #define HALATION_TINT    P[11].w
 #define HALATION_RADIUS  P[12].x
-// P[12].y and P[12].z are unused (they were the Panini and spherical projections).
+#define PANINI           P[12].y
+#define SPHERICAL        P[12].z
 // The plugin rewrites these two in the constant buffer: UPSCALE is 1 only when the larger buffer
 // really exists, and UPSCALE_SCALE is the factor it was actually created at.
 #define UPSCALE          P[12].w
@@ -2558,8 +2559,8 @@ float4 PS_Easu(VSOut i) : SV_Target
 }
 
 // ---------------------------------------------------------------------------------------------
-// Final: the FSR resolve and RCAS, contrast adaptive sharpening (after AMD FidelityFX CAS, MIT),
-// film grain and split view.
+// Final: the projections, the FSR resolve and RCAS, contrast adaptive sharpening (after AMD
+// FidelityFX CAS, MIT), film grain and split view.
 
 // Fitting the upscaled buffer back to the screen. One screen pixel now covers about UPSCALE_SCALE
 // of its texels, so a 5-tap tent over that footprint resolves it; a plain point sample would throw
@@ -2598,17 +2599,73 @@ float3 Rcas(float2 screenUv, float3 e)
 	return (lobe * (b + d + f + h) + e) * rcp(4.0 * lobe + 1.0);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Projection. The frame was rendered with the game's own perspective, so this only redistributes
+// the pixels it already has: it cannot widen the field of view. Both mappings work from the real
+// field of view the camera line carries (CAMERA_TAN_X/Y), so they follow the sprint and aiming
+// zooms, and both are scaled so the frame's corners still land on the corners: no black edge ever
+// appears; the cost is a slight zoom in the middle. The HUD is drawn after this and does not follow.
+// Returns where in the finished frame this output pixel reads from.
+float2 Project(float2 uv)
+{
+	if (PANINI <= 0.0 && SPHERICAL <= 0.0)
+		return uv;
+
+	float tx = max(CAMERA_TAN_X, 0.05);
+	float ty = max(CAMERA_TAN_Y, 0.05);
+	float2 p = uv * 2.0 - 1.0; // this output pixel, -1..1 each way
+	float2 src = p;
+
+	if (SPHERICAL > 0.0)
+	{
+		// Stereographic: a direction at angle theta from the centre lands at 2 tan(theta / 2) instead
+		// of the perspective tan(theta). With the corner's angle pinned to the corner, the middle of
+		// the frame is magnified and straight lines bow outwards, as a fisheye draws them.
+		float2 tp = p * float2(tx, ty);
+		float r = length(tp);
+		float cornerTan = length(float2(tx, ty));
+		float corner = atan(cornerTan);
+		float theta = 2.0 * atan(r / cornerTan * tan(corner * 0.5));
+		float scale = r > 1.0e-5 ? tan(theta) / r : 1.0;
+
+		src = lerp(src, tp * scale / float2(tx, ty), SPHERICAL);
+	}
+
+	if (PANINI > 0.0)
+	{
+		// Panini (d = 1): the horizontal axis becomes an angle, so verticals near the edges of a wide
+		// view stand straight instead of leaning outwards. For an output column at azimuth phi the
+		// Panini abscissa is 2 sin(phi) / (1 + cos(phi)) = 2 tan(phi / 2), which inverts in closed form.
+		float alpha = atan(tx); // half the horizontal field of view: the edge column
+		float phi = 2.0 * atan(src.x * tan(alpha * 0.5));
+		float cosPhi = max(cos(phi), 0.05);
+		float s = 2.0 / (1.0 + cosPhi);
+		// Rows stretch towards the edge columns; the output is squeezed by what the edge needs, so
+		// the corners stay put and the middle zooms in by the same amount both ways.
+		float fit = 2.0 * cos(alpha) / (1.0 + cos(alpha));
+		float2 q = float2(tan(phi) / tx, src.y * fit / (s * cosPhi));
+
+		src = lerp(src, q, PANINI);
+	}
+
+	return saturate(src * 0.5 + 0.5);
+}
+
 float4 PS_Final(VSOut i) : SV_Target
 {
 	float2 t = Texel.xy;
-	float2 uv = i.uv;
+	// A projection moves where this pixel reads from; everything drawn in screen space below (grain,
+	// dither, the split line) keeps using i.uv.
+	float2 uv = Project(i.uv);
+	bool warped = PANINI > 0.0 || SPHERICAL > 0.0;
 	bool upscaled = UPSCALE > 0.5;
-	// With the FSR stage on, Tex0 is the larger buffer, resolved back down to the screen here.
-	float3 e = upscaled ? ResolveUpscaled(uv) : Tex0.SampleLevel(Point, uv, 0).rgb;
+	// With the FSR stage on, Tex0 is the larger buffer, resolved back down to the screen here; a
+	// projection then gathers from more pixels than the screen holds, which is what it is there for.
+	float3 e = upscaled ? ResolveUpscaled(uv) : (warped ? Tex0.SampleLevel(Linear, uv, 0).rgb : Tex0.SampleLevel(Point, uv, 0).rgb);
 	float3 result = e;
 
 	if (upscaled && UPSCALE_SHARPNESS > 0.001)
-		result = Rcas(i.uv, e);
+		result = Rcas(uv, e);
 
 	// CAS and RCAS are the same sharpener. While FSR upscaling is on, RCAS above does the sharpening
 	// and this one is bypassed rather than doubling up on it.

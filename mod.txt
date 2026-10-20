@@ -2,7 +2,7 @@
 	"name": "Payday Screen Shaders",
 	"description": "Custom screen space shaders on the game world, drawn underneath the HUD: temporal antialiasing (SMAA or FXAA otherwise), contrast adaptive sharpening, eye adaptation, shadow and highlight recovery, 3D LUT colour grading, bloom, ambient occlusion, bounce light, ray traced lighting, reflections, haze and light shafts from the game's depth, obscurance, colour bloom, monocular cues, lens dirt, halation, and FSR 1.0 upscaling. A native SuperBLT plugin runs its own HLSL between the world render and the HUD.",
 	"author": "Copper",
-	"version": "0.9.0",
+	"version": "0.10.0",
 	"blt_version": 2,
 	"priority": -170,
 	"color": "0.9 0.62 0.2",
