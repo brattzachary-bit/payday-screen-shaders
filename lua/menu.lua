@@ -65,6 +65,7 @@ PSS.PAGES = {
 			{"slider", "bloom"},
 			{"slider", "bloom_threshold"},
 			{"slider", "bloom_radius"},
+			{"slider", "bloom_tint"},
 			{"divider"},
 			{"toggle", "ltm_on"},
 			{"slider", "ltm"},
@@ -98,9 +99,6 @@ PSS.PAGES = {
 		items = {
 			{"slider", "clarity"},
 			{"divider"},
-			{"toggle", "obscurance_on"},
-			{"slider", "obscurance"},
-			{"slider", "obscurance_radius"},
 			{"divider"},
 			{"toggle", "color_bloom_on"},
 			{"slider", "color_bloom"},
@@ -108,9 +106,6 @@ PSS.PAGES = {
 			{"divider"},
 			{"toggle", "cues_on"},
 			{"slider", "cues"},
-			{"slider", "cues_separation"},
-			{"slider", "cues_depth"},
-			{"slider", "cues_focus"}
 		}
 	},
 	{
@@ -194,11 +189,9 @@ PSS.PAGES = {
 			{"slider", "dirt"},
 			{"slider", "dirt_offset"},
 			{"divider"},
-			{"toggle", "halation_on"},
-			{"slider", "halation"},
-			{"slider", "halation_threshold"},
-			{"slider", "halation_tint"},
-			{"slider", "halation_radius"},
+			{"toggle", "flare_on"},
+			{"slider", "flare"},
+			{"slider", "flare_length"},
 			{"divider"},
 			{"toggle", "surface_grain_on"},
 			{"slider", "surface_grain"},

@@ -20,7 +20,7 @@ int main(int argc, char** argv)
 	std::string path = argv[1];
 	std::wstring wpath(path.begin(), path.end());
 	// The entry points the plugin compiles (native/src/effects.cpp).
-	const char* entries[] = {"VS_Fullscreen", "PS_FXAA", "PS_Luma", "PS_Adapt", "PS_BloomPrefilter", "PS_BloomDown", "PS_BloomUp", "PS_Grade", "PS_Final", "PS_WideDown", "PS_TintPrefilter", "PS_HaloPrefilter", "PS_LightInfo", "PS_Easu", "PS_LinearDepth", "PS_Taa", "PS_SmaaT2x", "PS_TaaSync", "PS_Ao", "PS_AoBlur", "PS_SmaaEdges", "PS_SmaaWeights", "PS_SmaaBlend", "PS_Focus", "PS_DofPrepare", "PS_DofBlur", "PS_DofFill", "PS_DofComposite", "PS_Il", "PS_Rtgi", "PS_Ssr", "PS_DepthBlur", "PS_MotionInput", "PS_MotionSearch", "PS_Temporal", "PS_MotionBlur", "PS_ShaftMask", "PS_Shafts", "PS_Grain", "PS_Downsample"};
+	const char* entries[] = {"VS_Fullscreen", "PS_FXAA", "PS_Luma", "PS_Adapt", "PS_BloomPrefilter", "PS_BloomDown", "PS_BloomUp", "PS_Grade", "PS_Final", "PS_WideDown", "PS_TintPrefilter", "PS_LightInfo", "PS_Easu", "PS_LinearDepth", "PS_Taa", "PS_SmaaT2x", "PS_TaaSync", "PS_Ao", "PS_AoBlur", "PS_SmaaEdges", "PS_SmaaWeights", "PS_SmaaBlend", "PS_Focus", "PS_DofPrepare", "PS_DofBlur", "PS_DofFill", "PS_DofComposite", "PS_Il", "PS_Rtgi", "PS_Ssr", "PS_DepthBlur", "PS_MotionInput", "PS_MotionSearch", "PS_Temporal", "PS_MotionBlur", "PS_ShaftMask", "PS_Shafts", "PS_Grain", "PS_Downsample"};
 	int failed = 0, ok = 0;
 	for (const char* entry : entries)
 	{

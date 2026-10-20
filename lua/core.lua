@@ -20,7 +20,7 @@ end
 local PSS = {}
 _G.PSS = PSS
 
-PSS.VERSION = "0.10.0"
+PSS.VERSION = "0.11.0"
 PSS.mod_path = ModPath
 PSS.save_path = SavePath .. "pss_settings.json"
 PSS.live_path = SavePath .. "pss_live.txt"      -- the plugin reads mods/saves/pss_live.txt
@@ -70,22 +70,23 @@ PSS.PARAMS = {
 	{key = "surface_grain_on", kind = "toggle", default = false, lua_only = true},
 	{key = "surface_grain", kind = "slider", default = 0.2, min = 0, max = 1, step = 0.05, gate = "surface_grain_on"},
 	{key = "surface_grain_size", kind = "slider", default = 0.4, min = 0, max = 1, step = 0.05},
-	{key = "sharpen", kind = "slider", default = 0.45, min = 0, max = 1, step = 0.05},
+	{key = "sharpen", kind = "slider", default = 0.35, min = 0, max = 1, step = 0.05},
 	-- FSR 1.0: the finished frame is redrawn larger along its edges (EASU), fitted back to the screen
 	-- and sharpened there (RCAS). It cannot recover detail the game never drew; what it gives is
 	-- edge-directed resampling and sharpening that judges its own limit. Ships off since 0.5.28 (the
 	-- author's settings); 1.5x when switched on.
-	{key = "upscale", kind = "toggle", default = true},
+	{key = "upscale", kind = "toggle", default = false},
 	-- One factor for both ways: above 1x the frame is redrawn larger and fitted back; below 1x it is
 	-- shrunk and rebuilt at screen size (sent to the plugin as render_scale, see native_value).
-	{key = "upscale_scale", kind = "slider", default = 2, min = 0.5, max = 2, step = 0.05},
+	{key = "upscale_scale", kind = "slider", default = 1.5, min = 0.5, max = 2, step = 0.05},
 	{key = "upscale_sharpness", kind = "slider", default = 0.45, min = 0, max = 1, step = 0.05},
 	{key = "deband", kind = "slider", default = 0.5, min = 0, max = 1, step = 0.05},
 	{key = "dither", kind = "slider", default = 1, min = 0, max = 1, step = 0.05},
 
-	{key = "bloom", kind = "slider", default = 1.35, min = 0, max = 2, step = 0.05},
-	{key = "bloom_threshold", kind = "slider", default = 0.55, min = 0, max = 2, step = 0.05},
-	{key = "bloom_radius", kind = "slider", default = 1.9, min = 0.25, max = 3, step = 0.05},
+	{key = "bloom", kind = "slider", default = 0.7, min = 0, max = 2, step = 0.05},
+	{key = "bloom_threshold", kind = "slider", default = 0.75, min = 0, max = 2, step = 0.05},
+	{key = "bloom_radius", kind = "slider", default = 1.2, min = 0.25, max = 3, step = 0.05},
+	{key = "bloom_tint", kind = "slider", default = 0.25, min = 0, max = 1, step = 0.05},
 
 	{key = "adapt", kind = "slider", default = 0.35, min = 0, max = 1, step = 0.05},
 	{key = "adapt_speed", kind = "slider", default = 1.5, min = 0.05, max = 10, step = 0.05},
@@ -124,26 +125,18 @@ PSS.PARAMS = {
 	{key = "spherical_on", kind = "toggle", default = false, lua_only = true},
 	{key = "spherical", kind = "slider", default = 0.3, min = 0, max = 1, step = 0.05, gate = "spherical_on"},
 
-	{key = "obscurance_on", kind = "toggle", default = true, lua_only = true},
-	{key = "obscurance", kind = "slider", default = 1, min = 0, max = 1, step = 0.05, gate = "obscurance_on"},
-	{key = "obscurance_radius", kind = "slider", default = 1.75, min = 0.5, max = 2, step = 0.05},
 	{key = "color_bloom_on", kind = "toggle", default = false, lua_only = true},
 	{key = "color_bloom", kind = "slider", default = 0.35, min = 0, max = 1, step = 0.05, gate = "color_bloom_on"},
 	{key = "color_bloom_radius", kind = "slider", default = 1, min = 0.5, max = 2, step = 0.05},
 	{key = "cues_on", kind = "toggle", default = true, lua_only = true},
 	{key = "cues", kind = "slider", default = 0.3, min = 0, max = 1, step = 0.05, gate = "cues_on"},
-	{key = "cues_separation", kind = "slider", default = 0.5, min = 0, max = 1, step = 0.05},
-	{key = "cues_depth", kind = "slider", default = 0.3, min = 0, max = 1, step = 0.05},
-	{key = "cues_focus", kind = "slider", default = 0.2, min = 0, max = 1, step = 0.05},
 
 	{key = "dirt_on", kind = "toggle", default = false, lua_only = true},
 	{key = "dirt", kind = "slider", default = 1, min = 0, max = 1, step = 0.05, gate = "dirt_on"},
 	{key = "dirt_offset", kind = "slider", default = 0.5, min = 0, max = 1, step = 0.05},
-	{key = "halation_on", kind = "toggle", default = false, lua_only = true},
-	{key = "halation", kind = "slider", default = 0.3, min = 0, max = 1, step = 0.05, gate = "halation_on"},
-	{key = "halation_threshold", kind = "slider", default = 0.85, min = 0.3, max = 2, step = 0.05},
-	{key = "halation_tint", kind = "slider", default = 0.6, min = 0, max = 1, step = 0.05},
-	{key = "halation_radius", kind = "slider", default = 1, min = 0.5, max = 2, step = 0.05},
+	{key = "flare_on", kind = "toggle", default = true, lua_only = true},
+	{key = "flare", kind = "slider", default = 0.35, min = 0, max = 1, step = 0.05, gate = "flare_on"},
+	{key = "flare_length", kind = "slider", default = 1, min = 0.25, max = 2, step = 0.05},
 
 	-- Depth. The plugin finds the game's own depth target among Diesel's render targets and copies
 	-- it; when there is nothing to copy it tells the shader so, and every one of these does
@@ -193,7 +186,7 @@ PSS.PARAMS = {
 	{key = "shafts_length", kind = "slider", default = 0.5, min = 0.1, max = 1, step = 0.05},
 
 	{key = "ltm_on", kind = "toggle", default = true, lua_only = true},
-	{key = "ltm", kind = "slider", default = 0.05, min = 0, max = 1, step = 0.05, gate = "ltm_on"},
+	{key = "ltm", kind = "slider", default = 0.35, min = 0, max = 1, step = 0.05, gate = "ltm_on"},
 	{key = "ltm_detail", kind = "slider", default = 0.3, min = 0, max = 1, step = 0.05},
 	{key = "mblur_on", kind = "toggle", default = true, lua_only = true},
 	{key = "mblur", kind = "slider", default = 0.5, min = 0, max = 1, step = 0.05, gate = "mblur_on"},
@@ -221,7 +214,7 @@ PSS.PRESETS = {
 		id = "clean",
 		values = {
 			ao_on = false, il_on = false, rtgi_on = false, ssr_on = false, fog_on = false, shafts_on = false,
-			ltm_on = false, dof_on = false, dirt_on = false, obscurance_on = false, color_bloom_on = false,
+			ltm_on = false, dof_on = false, dirt_on = false, flare_on = false, color_bloom_on = false,
 			cues_on = false, detail_on = false, surface_grain_on = false, render_scale = 1, bloom = 0, clarity = 0, shadows = 0, highlights = 0,
 			contrast = 0, vibrance = 0, saturation = 1, lut_mix = 0, vignette = 0, adapt = 0, sharpen = 0.2
 		}
@@ -232,7 +225,7 @@ PSS.PRESETS = {
 		id = "andreika",
 		values = {
 			upscale = false, upscale_scale = 1.5, bloom = 0.3, vibrance = 0.5, lut = 6, lut_mix = 0.25,
-			vignette = 0, chromatic = 0, dof_on = false, mblur_on = false
+			vignette = 0, chromatic = 0, dof_on = false, mblur_on = false, flare_on = false, bloom_tint = 0
 		}
 	}}
 
@@ -626,8 +619,9 @@ function PSS:native_value(param, v)
 	-- The FSR factor: above 1x the plugin upscales, below 1x it does the render scale cleanup.
 	local scale = self.settings.upscale_scale
 
+	-- A projection reads from the larger frame, so it switches FSR on by itself (above 1x).
 	if param.key == "upscale" then
-		return self.settings.upscale and scale > 1.001 and 1 or 0
+		return (self.settings.upscale or self.settings.panini_on or self.settings.spherical_on) and scale > 1.001 and 1 or 0
 	elseif param.key == "render_scale" then
 		return self.settings.upscale and math.min(scale, 1) or 1
 	end

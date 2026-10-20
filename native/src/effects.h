@@ -135,7 +135,6 @@ class Effects
 	ID3D11PixelShader* m_psFinal = nullptr;
 	ID3D11PixelShader* m_psWideDown = nullptr;
 	ID3D11PixelShader* m_psTintPrefilter = nullptr;
-	ID3D11PixelShader* m_psHaloPrefilter = nullptr;
 	ID3D11PixelShader* m_psLightInfo = nullptr;
 	ID3D11PixelShader* m_psEasu = nullptr;
 	ID3D11PixelShader* m_psLinearDepth = nullptr;
@@ -188,7 +187,6 @@ class Effects
 	RenderTexture m_blur[2]; // half and quarter resolution copies (clarity, monocular cues, and the start of the wide chains)
 	RenderTexture m_wide[WIDE_LEVELS]; // wide blur of the image: obscurance and monocular cues
 	RenderTexture m_tint[WIDE_LEVELS]; // wide blur of strong colour only: colour bloom
-	RenderTexture m_halo[WIDE_LEVELS]; // wide blur of the brightest highlights only: halation
 	RenderTexture m_light;             // 1x1: where the bright light in the frame is, and how strong
 	RenderTexture m_upscale;           // FSR 1.0: the EASU result (RCAS runs in the final pass)
 	RenderTexture m_ao;                // half resolution ambient occlusion from depth

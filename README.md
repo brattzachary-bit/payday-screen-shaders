@@ -22,50 +22,51 @@ After an update, restart the game: the plugin cannot be reloaded while the game 
 
 ## The look
 
-It ships with the author's own settings: an enhanced PAYDAY 2, aimed at how PAYDAY 3 looks.
-Four presets at the top of the options switch the whole look in one click:
+It ships with the author's own settings: an enhanced PAYDAY 2, aimed at how PAYDAY 3 looks, kept
+calm enough to play a whole heist in. Four presets at the top of the options switch the whole look
+in one click:
 
 | Preset | What you get |
 |---|---|
 | **Enhanced** (default) | The full look: the Enhanced column below |
-| **Performance** | Enhanced without indirect light, ray traced lighting, reflections and light shafts; lighter ambient occlusion; SMAA |
+| **Performance** | Enhanced without indirect light, ray traced lighting, reflections and light shafts; lighter ambient occlusion; SMAA; no surface grain |
 | **Just the cleanup** | SMAA T2x, light sharpening, moire reduction, debanding and dithering. Vanilla with the rough edges taken off |
-| **Enhanced (origin)** | The original author's Enhanced look from 0.5.3: stronger bloom and colour, Night Ops LUT, vignette, chromatic aberration, depth of field, motion blur, FSR 2x and SMAA T2x (0.5.3 had SMAA). Its Panini and spherical projection are left out: they were removed in 0.5.11 and 0.5.16 |
+| **AndreikaRPM's look** | The look the fork shipped from 0.6 to 0.7: gentler bloom, no warmth or flare, Film Stock at a quarter, no vignette, chromatic aberration, depth of field or motion blur |
 
 ## Effects
 
 Effects marked *depth* read the game's depth buffer. Everything else works from the picture alone.
 
-| Effect | What it does | Enhanced (default) | Performance | Just the cleanup | Enhanced (origin) |
+| Effect | What it does | Enhanced (default) | Performance | Just the cleanup | AndreikaRPM's look |
 |---|---|---|---|---|---|
 | Antialiasing | Off, FXAA, SMAA, SMAA T2x or TAA (see below) | SMAA T2x | SMAA | SMAA T2x | SMAA T2x |
-| Sharpening | Contrast adaptive sharpening (AMD CAS); eases off at depth edges | on | on | light | on |
-| FSR 1.0 | Redraws the frame larger along its edges and fits it back (AMD EASU and RCAS). Below 1x it shrinks and rebuilds the frame instead, which washes out shimmer | off | off | off | on, 2x |
+| Sharpening | Contrast adaptive sharpening (AMD CAS); eases off at depth edges | 0.35 | 0.35 | light | 0.35 |
+| FSR 1.0 | Redraws the frame larger along its edges and fits it back (AMD EASU and RCAS). Below 1x it shrinks and rebuilds the frame instead, which washes out shimmer. Switches itself on while a projection is on | off, 1.5x when on | off | off | off |
 | Moire reduction | Calms the shimmer of fine textures in the distance | on | on | on | on |
 | Texture detail | Strengthens the fine contrast textures already have | on | on | off | on |
 | Debanding, dithering | Hide colour steps in dark gradients | on | on | on | on |
 | Eye adaptation | Centre-weighted exposure, eased over time | on | on | off | on |
-| Bloom | Soft glow around bright light | on | on | off | strong |
-| Local tone mapping | Balances dark and bright areas, keeps their detail | on | on | off | on |
-| Colour grade | Temperature, tint, shadows, highlights, lift, gamma, gain, contrast, saturation, vibrance, and a 3D LUT | on, Film Stock LUT 25% | on, Film Stock LUT 25% | off | on, Night Ops LUT 50% |
+| Bloom | Soft glow around bright light, with a warmth slider (the amber bleed of film) | 0.7, warm 25% | 0.7, warm 25% | off | 0.3, no warmth |
+| Lens flare | Ghosts and a streak from the bright light in the frame, drawn from the bloom | on | on | off | off |
+| Local tone mapping | Exposure fusion: windows and dark corridors both read, without halos | on | on | off | on |
+| Colour grade | Temperature, tint, shadows, highlights, lift, gamma, gain, contrast, saturation, vibrance, and a 3D LUT | on, Night Ops LUT 50% | on, Night Ops LUT 50% | off | on, Film Stock LUT 25% |
 | Clarity | Midtone local contrast | on | on | off | on |
-| Obscurance | Deepens creases from brightness alone; steps aside for real ambient occlusion | on | on | off | on |
-| Monocular cues | Edge separation, a little distance fade, softer screen edges | on | on | off | on |
+| Monocular cues | Edge separation, a little distance fade, softer screen edges; one strength | on | on | off | on |
 | Colour bloom | Strong colours spread softly into their surroundings | off | off | off | off |
-| Ambient occlusion (depth) | Contact shadows from real geometry (GTAO) | on | half strength | off | on |
+| Ambient occlusion (depth) | Contact shadows from real geometry (GTAO); bounced light respects it | on | half strength | off | on |
 | Aerial perspective (depth) | Distant surfaces fade into the colour of the air | on | on | off | on |
 | Indirect light (depth) | One bounce of light between nearby surfaces | on | off | off | on |
 | Ray traced lighting (depth) | Screen space rays gather light, built up over frames | on | off | off | on |
 | Reflections (depth) | Screen space reflections on smooth floors | on | off | off | on |
 | Light shafts | Beams from bright windows and lamps | on | off | off | on |
 | Height fog (depth) | Fog that pools low around you | off | off | off | off |
-| Depth of field (depth) | Focuses on what is under the crosshair, with its own blur size while aiming; your weapon stays sharp | off | off | off | on |
-| Vignette, chromatic aberration, film grain | Lens effects | off | off | off | vignette, chromatic aberration |
+| Depth of field (depth) | Focuses on what is under the crosshair, with its own blur size while aiming; your weapon stays sharp | on | on | off | off |
+| Vignette, chromatic aberration | Lens effects; both leave what is close to you alone when depth is available | on | on | off | off |
+| Film grain | Grain with real structure, densest in shadows and midtones | off | off | off | off |
 | Lens dirt | Dust on the lens, lit by the bright light in the frame | off | off | off | off |
 | Panini and spherical projection | Straightens verticals, or bows lines like a fisheye, from your real field of view (Lens; the HUD does not follow) | off | off | off | off |
-| Halation | Warm bleed around the brightest highlights | off | off | off | off |
 | Surface grain | Fine grain that moves with the surfaces | off | off | off | off |
-| Motion blur | Blur along the motion found in the picture | off | off | off | on |
+| Motion blur | Blur along the motion found in the picture | on | on | off | off |
 
 LUTs are the `.cube` files in `luts/`. Add your own there and they appear in the menu.
 
@@ -174,7 +175,7 @@ while you modify a weapon.
   accumulation weight the temporal antialiasing follows.
 * Marius Bjørge (ARM) – the dual filter blur used by the bloom and blur chains.
 * Thomas Luft, Carsten Colditz and Oliver Deussen – *Image Enhancement by Unsharp Masking the Depth
-  Buffer* (2006), whose idea obscurance and edge separation follow, applied to brightness because the
+  Buffer* (2006), whose idea the cues' edge separation follows, applied to brightness because the
   plugin has no depth.
 * SuperBLT team – the native plugin loader.
 

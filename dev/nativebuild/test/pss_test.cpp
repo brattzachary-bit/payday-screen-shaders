@@ -250,7 +250,7 @@ static void TestEffects(ID3D11Device* dev, ID3D11DeviceContext1* ctx, const char
 	s.p[P_DEBAND] = 0.5f;
 	s.p[P_DITHER] = 1.0f;
 	s.p[P_CHROMATIC] = 0.4f;
-	s.p[P_OBSCURANCE] = 0.5f;
+	s.p[P_FLARE] = 0.5f;
 	s.p[P_COLOR_BLOOM] = 0.5f;
 	s.p[P_CUES] = 0.5f;
 
@@ -315,47 +315,31 @@ static void TestEffects(ID3D11Device* dev, ID3D11DeviceContext1* ctx, const char
 	auto at = [&](std::vector<uint8_t>& img, UINT x, UINT y) { return &img[((size_t)y * W + x) * 4]; };
 	std::string L(label);
 
-	// Obscurance: grey room, a dark square (a shadow), and a bright square on near black (a lamp).
+	// Bloom warmth (0.11, halation folded in): a white highlight on a mid grey wall glows warm with
+	// the warmth up, neutral with it down, and the far corner is untouched either way.
 	{
-		Settings o = NeutralSettings(shader, lut);
-		o.p[P_OBSCURANCE] = 1.0f;
-		o.p[P_OBSCURANCE_RADIUS] = 1.0f;
-		std::vector<uint8_t> in;
-		auto room = [](UINT x, UINT y, uint8_t* p) {
-			uint8_t v = 190;
-			if (x >= 120 && x < 220 && y >= 130 && y < 230) v = 35;                    // shadow
-			if (x >= 360) v = 4;                                                          // a dark room
-			if (x >= 540 && x < 570 && y >= 165 && y < 195) v = 200;                     // a lamp inside it
-			p[0] = p[1] = p[2] = v;
+		auto lamp = [](UINT x, UINT y, uint8_t* p) {
+			p[0] = p[1] = p[2] = 60;
+			if (x >= 280 && x < 360 && y >= 140 && y < 220) p[0] = p[1] = p[2] = 255;
 		};
-		std::vector<uint8_t> out = runPattern(o, room, in);
-		double brighter = 0, worstRatio = 1, insideShadow = 0, lamp = 0, rim = 0, openArea = 0;
+		Settings warm = NeutralSettings(shader, lut);
+		warm.p[P_BLOOM] = 1.0f;
+		warm.p[P_BLOOM_THRESHOLD] = 0.6f;
+		warm.p[P_BLOOM_TINT] = 1.0f;
+		Settings neutral = warm;
+		neutral.p[P_BLOOM_TINT] = 0.0f;
+		std::vector<uint8_t> in, in2;
+		std::vector<uint8_t> warmOut = runPattern(warm, lamp, in);
+		std::vector<uint8_t> neutralOut = runPattern(neutral, lamp, in2);
+		const uint8_t* nearWarm = at(warmOut, 375, 180);
+		const uint8_t* nearNeutral = at(neutralOut, 375, 180);
+		double warmth = (double)nearWarm[0] - (double)nearWarm[2];
+		double neutrality = fabs((double)nearNeutral[0] - (double)nearNeutral[2]);
+		double farShift = Luma8(at(warmOut, 40, 330)) - Luma8(at(in, 40, 330));
 
-		for (UINT y = 0; y < H; y++)
-			for (UINT x = 0; x < W; x++)
-			{
-				double a = Luma8(at(in, x, y)), b = Luma8(at(out, x, y));
-				brighter = std::max(brighter, b - a);
-				if (a > 20) worstRatio = std::min(worstRatio, b / a);
-			}
-
-		for (UINT y = 140; y < 220; y++)
-			for (UINT x = 130; x < 210; x++)
-				insideShadow = std::max(insideShadow, Luma8(at(in, x, y)) - Luma8(at(out, x, y)));
-
-		for (UINT y = 168; y < 192; y++)
-			for (UINT x = 543; x < 567; x++)
-				lamp = std::max(lamp, Luma8(at(in, x, y)) - Luma8(at(out, x, y)));
-
-		rim = Luma8(at(in, 226, 180)) - Luma8(at(out, 226, 180));
-		openArea = fabs(Luma8(at(in, 40, 40)) - Luma8(at(out, 40, 40)));
-
-		Check((L + ": obscurance never brightens").c_str(), brighter <= 1.5, "brightest gain " + std::to_string(brighter));
-		Check((L + ": obscurance darkening is capped").c_str(), worstRatio >= 0.63, "darkest ratio " + std::to_string(worstRatio));
-		Check((L + ": obscurance deepens the edge next to a shadow").c_str(), rim > 2.0, "rim " + std::to_string(rim));
-		Check((L + ": obscurance never darkens the shadow itself").c_str(), insideShadow <= 1.5, "inside " + std::to_string(insideShadow));
-		Check((L + ": obscurance leaves a light surrounded by near black alone").c_str(), lamp <= 1.5, "lamp " + std::to_string(lamp));
-		Check((L + ": obscurance leaves open areas alone").c_str(), openArea <= 1.5, "open " + std::to_string(openArea));
+		Check((L + ": bloom warmth bleeds warm around a bright highlight").c_str(), warmth > 2.0, "red minus blue " + std::to_string(warmth));
+		Check((L + ": without warmth the bloom is neutral").c_str(), neutrality <= 1.5, "red minus blue " + std::to_string(neutrality));
+		Check((L + ": the bloom stays near the highlight").c_str(), fabs(farShift) < 3.0, "far corner shift " + std::to_string(farShift));
 	}
 
 	// Colour bloom: grey wall with a saturated red panel and a white light.
@@ -444,25 +428,34 @@ static void TestEffects(ID3D11Device* dev, ID3D11DeviceContext1* ctx, const char
 		Check((L + ": lens dirt stays invisible with no bright light in frame").c_str(), darkDiff <= 1, "max diff " + std::to_string(darkDiff));
 	}
 
-	// Halation: a white highlight on a mid grey wall bleeds warm into its surroundings.
+	// Lens flare (0.11): a bright lamp off centre throws a ghost on the far side of the centre
+	// (the bloom read mirrored through the middle at 1.15x lands it at 0.5 + (lamp - 0.5) / -1.15),
+	// and with nothing bright in frame there is no flare at all.
 	{
-		Settings ha = NeutralSettings(shader, lut);
-		ha.p[P_HALATION] = 1.0f;
-		ha.p[P_HALATION_TINT] = 1.0f;
-		ha.p[P_HALATION_RADIUS] = 1.0f;
-		std::vector<uint8_t> in;
+		Settings fl = NeutralSettings(shader, lut);
+		fl.p[P_BLOOM] = 1.0f;
+		fl.p[P_BLOOM_THRESHOLD] = 0.6f;
+		fl.p[P_FLARE] = 1.0f;
+		fl.p[P_FLARE_LENGTH] = 1.0f;
+		Settings noFlare = fl;
+		noFlare.p[P_FLARE] = 0.0f;
 		auto lamp = [](UINT x, UINT y, uint8_t* p) {
 			p[0] = p[1] = p[2] = 60;
-			if (x >= 280 && x < 360 && y >= 140 && y < 220) p[0] = p[1] = p[2] = 255;
+			if (x >= 432 && x < 592 && y >= 70 && y < 170) p[0] = p[1] = p[2] = 255; // centre (0.8, 0.33)
 		};
-		std::vector<uint8_t> out = runPattern(ha, lamp, in);
-		const uint8_t* nearLamp = at(out, 375, 180);
-		const uint8_t* farAway = at(out, 40, 330);
-		double warmth = (double)nearLamp[0] - (double)nearLamp[2];
-		double farShift = Luma8(farAway) - Luma8(at(in, 40, 330));
+		std::vector<uint8_t> in, in2, in3;
+		std::vector<uint8_t> out = runPattern(fl, lamp, in);
+		std::vector<uint8_t> plain = runPattern(noFlare, lamp, in2);
+		double ghost = Luma8(at(out, 153, 234)) - Luma8(at(plain, 153, 234));
+		// The bottom right corner is outside every ghost of this lamp (the nearest ghost covers the
+		// bottom LEFT quarter) and off the streak's rows.
+		double farCorner = Luma8(at(out, 600, 340)) - Luma8(at(plain, 600, 340));
+		std::vector<uint8_t> darkOut = runPattern(fl, [](UINT x, UINT y, uint8_t* p) { p[0] = p[1] = p[2] = (uint8_t)(18 + (x / 80) * 3); }, in3);
+		int darkDiff = MaxDiff(in3, darkOut);
 
-		Check((L + ": halation bleeds warm around a bright highlight").c_str(), warmth > 2.0, "red minus blue " + std::to_string(warmth));
-		Check((L + ": halation stays near the highlight").c_str(), fabs(farShift) < 3.0, "far corner shift " + std::to_string(farShift));
+		Check((L + ": the lens flare throws a ghost across the centre").c_str(), ghost > 2.0, "ghost gain " + std::to_string(ghost));
+		Check((L + ": the flare leaves a corner clear of its ghosts alone").c_str(), fabs(farCorner) < 2.0, "corner " + std::to_string(farCorner));
+		Check((L + ": no bright light, no flare").c_str(), darkDiff <= 1, "max diff " + std::to_string(darkDiff));
 	}
 
 	// Panini and spherical: the frame is reshaped, but no empty or smeared border appears and the
@@ -912,15 +905,6 @@ static void TestAdvanced(ID3D11Device* dev, ID3D11DeviceContext1* ctx, const cha
 		double away = RegionMean(input, W, W - 60, W - 20, 100, 260, -1) - RegionMean(onStep, W, W - 60, W - 20, 100, 260, -1);
 		Check("gtao: the surface beside a step is occluded", beside > 3.0, "darkened by " + std::to_string(beside));
 		Check("gtao: the same surface far from the step is not", away < 1.5 && away > -1.5, "changed by " + std::to_string(away));
-
-		// Obscurance guesses the same creases from brightness; with real occlusion running it steps aside.
-		Settings both = s;
-		both.p[P_OBSCURANCE] = 1.0f;
-		both.p[P_OBSCURANCE_RADIUS] = 1.0f;
-		Effects d;
-		std::vector<uint8_t> withGuess = render(d, grey, step, both, input);
-		int guessDiff = MaxDiff(onStep, withGuess);
-		Check("gtao: obscurance steps aside while real occlusion runs", guessDiff <= 1, "max channel diff " + std::to_string(guessDiff));
 
 		flat->Release();
 		tilted->Release();
@@ -1435,24 +1419,43 @@ static void ReportAdvancedCost(ID3D11Device* dev, ID3D11DeviceContext1* ctx, con
 	// number for the look people get on first launch rather than for every effect at once.
 	Settings shipped = NeutralSettings(shader, lut);
 	WithCamera(shipped, W, H);
+	// Mirrors lua/core.lua's shipped look (0.11): keep this in step when the defaults change.
 	shipped.p[P_AA] = 1.0f;
-	shipped.p[P_AA_MODE] = 1.0f;
-	shipped.p[P_AO] = 0.65f;
-	shipped.p[P_AO_RADIUS] = 100.0f;
-	shipped.p[P_IL] = 0.35f;
+	shipped.p[P_AA_MODE] = 2.0f;   // SMAA T2x (runs as SMAA here: no camera poses)
+	shipped.p[P_SHARPEN] = 0.35f;
+	shipped.p[P_DEMOIRE] = 0.4f;
+	shipped.p[P_DETAIL] = 0.25f;
+	shipped.p[P_DEBAND] = 0.5f;
+	shipped.p[P_DITHER] = 1.0f;
+	shipped.p[P_ADAPT] = 0.35f;
+	shipped.p[P_BLOOM] = 0.7f;
+	shipped.p[P_BLOOM_THRESHOLD] = 0.75f;
+	shipped.p[P_BLOOM_RADIUS] = 1.2f;
+	shipped.p[P_BLOOM_TINT] = 0.25f;
+	shipped.p[P_FLARE] = 0.35f;
+	shipped.p[P_LTM] = 0.35f;
+	shipped.p[P_LTM_DETAIL] = 0.3f;
+	shipped.p[P_CLARITY] = 0.15f;
+	shipped.p[P_CUES] = 0.3f;
+	shipped.p[P_CONTRAST] = 0.5f;
+	shipped.p[P_VIBRANCE] = 1.0f;
+	shipped.p[P_LUT_MIX] = 0.5f;
+	shipped.p[P_VIGNETTE] = 0.32f;
+	shipped.p[P_CHROMATIC] = 0.4f;
+	shipped.p[P_AO] = 1.0f;
+	shipped.p[P_AO_RADIUS] = 200.0f;
+	shipped.p[P_IL] = 0.75f;
 	shipped.p[P_IL_RADIUS] = 200.0f;
-	shipped.p[P_RTGI] = 0.4f;
+	shipped.p[P_RTGI] = 0.75f;
 	shipped.p[P_RTGI_DISTANCE] = 500.0f;
-	shipped.p[P_SSR] = 0.4f;
-	shipped.p[P_FOG] = 0.18f;
+	shipped.p[P_SSR] = 0.2f;
+	shipped.p[P_SSR_BLUR] = 1.0f;
+	shipped.p[P_FOG] = 0.2f;
+	shipped.p[P_FOG_START] = 0.25f;
 	shipped.p[P_SHAFTS] = 0.4f;
-	shipped.p[P_LTM] = 0.2f;
-	shipped.p[P_BLOOM] = 0.25f;
-	shipped.p[P_PANINI] = 0.15f;
-	shipped.p[P_UPSCALE] = 1.0f;
-	shipped.p[P_UPSCALE_SCALE] = 1.25f;
 	shipped.p[P_DOF] = 0.1f;   // from the hip
 	shipped.p[P_DOF_AIM] = 0.5f; // and while aiming
+	shipped.p[P_MBLUR] = 0.5f;
 	shipped.p[P_TEMPORAL] = 1.0f;
 	double shippedCost = measure(shipped);
 	printf("    the shipped defaults            %.3f ms/frame  (+%.3f ms)\n", shippedCost, shippedCost - baseline);

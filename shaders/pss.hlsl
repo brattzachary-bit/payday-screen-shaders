@@ -68,8 +68,8 @@ Texture2D Tex8 : register(t8); // colour chain, 1/16
 Texture2D Tex9 : register(t9); // colour chain, 1/32
 Texture2D Dirt : register(t10);      // the lens dirt photograph (one channel)
 Texture2D LightInfo : register(t11); // 1x1: where the frame's bright light is, and how much
-Texture2D Tex12 : register(t12);     // halation chain, 1/16
-Texture2D Tex13 : register(t13);     // halation chain, 1/32
+Texture2D Tex12 : register(t12);     // unused since 0.11 (was the halation chain)
+Texture2D Tex13 : register(t13);     // unused
 Texture2D Depth : register(t14);     // distance from the camera in world units (PS_LinearDepth)
 Texture2D AoTex : register(t15);     // ambient occlusion, half resolution, blurred
 Texture2D IlTex : register(t16);     // indirect light, half resolution
@@ -116,8 +116,7 @@ SamplerState Point : register(s1);
 #define DEBAND           P[8].x
 #define DITHER           P[8].y
 #define CHROMATIC        P[8].z
-#define OBSCURANCE       P[8].w
-#define OBSCURANCE_RADIUS P[9].x
+// P[8].w and P[9].x are unused (they were obscurance, removed in 0.11).
 #define COLOR_BLOOM      P[9].y
 #define COLOR_BLOOM_RADIUS P[9].z
 #define CUES             P[9].w
@@ -126,10 +125,10 @@ SamplerState Point : register(s1);
 #define CUES_FOCUS       P[10].z
 #define DIRT             P[10].w
 #define DIRT_OFFSET      P[11].x
-#define HALATION         P[11].y
-#define HALATION_THRESHOLD P[11].z
-#define HALATION_TINT    P[11].w
-#define HALATION_RADIUS  P[12].x
+#define FLARE            P[11].y
+// P[11].z is unused (it was the halation threshold).
+#define BLOOM_TINT       P[11].w
+#define FLARE_LENGTH     P[12].x
 #define PANINI           P[12].y
 #define SPHERICAL        P[12].z
 // The plugin rewrites these two in the constant buffer: UPSCALE is 1 only when the larger buffer
@@ -600,24 +599,6 @@ float4 PS_TintPrefilter(VSOut i) : SV_Target
 	float weight = smoothstep(0.2, 0.65, chroma) * smoothstep(0.01, 0.06, lum);
 
 	return float4((c - lum) * weight, weight);
-}
-
-// Halation prefilter: only the brightest highlights feed this chain, and they carry their own
-// colour, so a white lamp bleeds warm and a red sign bleeds red. Bloom's threshold is far lower;
-// this one starts where the image is already near white.
-float4 PS_HaloPrefilter(VSOut i) : SV_Target
-{
-	float2 t = Texel.xy;
-	float3 s = Tex0.SampleLevel(Linear, i.uv + float2(-t.x, -t.y), 0).rgb;
-	s += Tex0.SampleLevel(Linear, i.uv + float2(t.x, -t.y), 0).rgb;
-	s += Tex0.SampleLevel(Linear, i.uv + float2(-t.x, t.y), 0).rgb;
-	s += Tex0.SampleLevel(Linear, i.uv + float2(t.x, t.y), 0).rgb;
-
-	float3 c = ReadLinear(s * 0.25);
-	float l = LumaLinear(c);
-	float over = max(l - HALATION_THRESHOLD, 0.0);
-
-	return float4(c * (over / max(l, 0.0001)), 1.0);
 }
 
 // Where the bright light in this frame is, and how much of it there is. One pixel, 256 taps over
@@ -1689,10 +1670,14 @@ float4 PS_Grade(VSOut i) : SV_Target
 {
 	float3 source = Tex0.SampleLevel(Point, i.uv, 0).rgb;
 
+	// How far away this pixel is, 0 close to 1 far, for the lens effects: a real lens fringes and
+	// darkens what it images, not your own hands and weapon, which sit right against it.
+	float far = HaveDepth() ? saturate(DepthFraction(i.uv) * 4.0) : 1.0;
+
 	if (CHROMATIC > 0.0)
 	{
 		float2 d = i.uv - 0.5;
-		float2 offset = d * dot(d, d) * CHROMATIC * 0.025;
+		float2 offset = d * dot(d, d) * CHROMATIC * 0.025 * lerp(0.35, 1.0, far);
 
 		source.r = Tex0.SampleLevel(Linear, i.uv + offset, 0).r;
 		source.b = Tex0.SampleLevel(Linear, i.uv - offset, 0).b;
@@ -1752,9 +1737,28 @@ float4 PS_Grade(VSOut i) : SV_Target
 		float near = log2(max(LumaLinear(ReadLinear(Tex3.SampleLevel(Linear, i.uv, 0).rgb)) * scale, 0.00001));
 		float wide = log2(max(LumaLinear(ReadLinear(TENT9(Tex6, i.uv, Screen.zw * 8.0).rgb)) * scale, 0.00001));
 		float base = lerp(near, wide, exp(-abs(near - wide) * 1.5));
-		const float middle = -2.47; // log2(0.18)
-		float compressed = middle + (base - middle) * (1.0 - 0.5 * saturate(LTM));
-		float target = compressed + (here - base) * (1.0 + LTM_DETAIL);
+		// Exposure fusion (Mertens, Kautz and Van Reeth, 2007), on the base: it is looked at under
+		// three exposures, the frame's own and up to two stops either side, and each is trusted where
+		// it comes out well exposed (its gamma brightness near the middle). The blend of the three
+		// against the frame's own is the gain this pixel gets, so a bright window and a dark corridor
+		// are each pulled towards being readable by the exposure that suits them; the weights come
+		// from the blurred base, so edges cannot halo, and the detail on top is kept, a little stronger.
+		float stops = 2.0 * saturate(LTM);
+		float baseLin = exp2(base);
+		float fused = 0.0;
+		float weightSum = 0.0;
+
+		[unroll] for (int k = -1; k <= 1; k++)
+		{
+			float lum = baseLin * exp2(stops * k);
+			float encoded = pow(saturate(lum), 1.0 / 2.2);
+			float w = exp(-(encoded - 0.5) * (encoded - 0.5) / (2.0 * 0.22 * 0.22)) + 0.02;
+
+			fused += w * log2(max(lum, 0.00001));
+			weightSum += w;
+		}
+
+		float target = fused / weightSum + (here - base) * (1.0 + LTM_DETAIL);
 
 		c *= pow(2.0, clamp(target - here, -3.0, 3.0));
 	}
@@ -1795,6 +1799,12 @@ float4 PS_Grade(VSOut i) : SV_Target
 
 		if (RTGI > 0.0)
 			gathered += RtgiTex.SampleLevel(Linear, i.uv, 0).rgb * RTGI;
+
+		// Bounced light arrives from the open part of the hemisphere, so where the occlusion found
+		// a crease or a corner, less of it lands: the light then sits in corners instead of
+		// washing them out. Partial, since the gather already weights by facing.
+		if (AO > 0.0)
+			gathered *= lerp(1.0, saturate(AoTex.SampleLevel(Linear, i.uv, 0).r), 0.6);
 
 		c += gathered * surface;
 	}
@@ -1848,6 +1858,16 @@ float4 PS_Grade(VSOut i) : SV_Target
 	if (Extra.y > 0.5)
 	{
 		bloom = Tex1.SampleLevel(Linear, i.uv, 0).rgb / 6.0;
+
+		// Warmth: the bloom leans towards the amber bleed film gives its highlights, at the same
+		// brightness. (This took halation's place in 0.11; one slider instead of five.)
+		if (BLOOM_TINT > 0.0)
+		{
+			float3 warm = float3(1.0, 0.72, 0.5);
+			warm /= LumaLinear(warm);
+			bloom *= lerp(float3(1.0, 1.0, 1.0), warm, BLOOM_TINT);
+		}
+
 		c += bloom * BLOOM;
 	}
 
@@ -1863,16 +1883,47 @@ float4 PS_Grade(VSOut i) : SV_Target
 		c = max(c + spread * COLOR_BLOOM * 2.0 * receiver, 0.0);
 	}
 
-	// Halation: the warm bleed film gets around its brightest highlights, from light scattering
-	// through the emulsion. Only near-white highlights feed it, it is blurred far wider than
-	// bloom, and it lands warm rather than white.
-	if (HALATION > 0.0)
+	// Lens flare: ghosts and an anamorphic streak from the bright light that is actually in the
+	// frame, judged from the same one-pixel light info the dirt uses. The ghosts are the bloom
+	// chain read mirrored through the middle of the screen at three scales, each a different tint,
+	// so they sit on the line from the light through the centre and fade as they leave it; the
+	// streak is the bloom chain read along a horizontal line through this pixel. With nothing
+	// bright in view there is no flare at all.
+	if (FLARE > 0.0 && Extra.y > 0.5)
 	{
-		float reach = saturate((HALATION_RADIUS - 0.5) / 1.5);
-		float3 halo = lerp(TENT9(Tex12, i.uv, Screen.zw * 16.0).rgb, TENT9(Tex13, i.uv, Screen.zw * 32.0).rgb, reach);
-		float3 warm = halo * lerp(float3(1.0, 1.0, 1.0), float3(1.0, 0.42, 0.20), HALATION_TINT);
+		float4 light = LightInfo.SampleLevel(Point, float2(0.5, 0.5), 0);
+		float amount = saturate(light.z * 25.0) * saturate((light.w - 0.65) * 4.0);
 
-		c += warm * HALATION * 0.6;
+		if (amount > 0.001)
+		{
+			float aspect = Screen.x / Screen.y;
+			float3 flare = float3(0.0, 0.0, 0.0);
+			const float scales[3] = {-0.55, -1.15, 0.45};
+			const float3 tints[3] = {float3(1.0, 0.82, 0.62), float3(0.62, 0.86, 1.0), float3(0.9, 1.0, 0.78)};
+
+			[unroll] for (int k = 0; k < 3; k++)
+			{
+				float2 ghostUv = 0.5 + (i.uv - 0.5) * scales[k];
+				float fromCentre = length((ghostUv - 0.5) * float2(aspect, 1.0));
+				float w = pow(saturate(1.0 - fromCentre / 0.75), 2.0);
+
+				flare += Tex1.SampleLevel(Linear, saturate(ghostUv), 0).rgb / 6.0 * tints[k] * w * 0.5;
+			}
+
+			float3 streak = float3(0.0, 0.0, 0.0);
+			float reach = 0.18 * FLARE_LENGTH;
+
+			[unroll] for (int t = -6; t <= 6; t++)
+			{
+				float f = t / 6.0;
+				float2 su = float2(i.uv.x + f * reach, i.uv.y);
+
+				streak += Tex1.SampleLevel(Linear, saturate(su), 0).rgb / 6.0 * (1.0 - abs(f));
+			}
+
+			flare += streak / 7.0 * float3(0.7, 0.85, 1.0) * 0.45;
+			c += flare * FLARE * amount;
+		}
 	}
 
 	// Lens dirt: dust and smears on the front element, lit by the bright light that is actually in
@@ -1972,32 +2023,6 @@ float4 PS_Grade(VSOut i) : SV_Target
 		g += fine * DETAIL * 1.5 * (1.0 - edge * 0.75) * (0.35 + 0.65 * middle);
 	}
 
-	// Obscurance: bloom in reverse. A pixel whose surroundings are darker than it is pulled down,
-	// so creases, contact areas and recesses deepen. Colour only, no depth. In a dark scene (judged
-	// over the widest blur) there is no effect at all, so a light in a dark room or the edge of a
-	// shadow you need to see into is never dimmed; the darkening is capped, and the shadow recovery
-	// below runs after it.
-	// Obscurance guesses recesses from brightness. With real ambient occlusion running it would only
-	// darken the same creases twice, so it steps aside.
-	if (OBSCURANCE > 0.0 && !(HaveDepth() && AO > 0.0))
-	{
-		float reach = saturate((OBSCURANCE_RADIUS - 0.5) / 1.5);
-		float around = Luma(ReadGamma(lerp(TENT9(Tex6, i.uv, Screen.zw * 8.0).rgb, TENT9(Tex7, i.uv, Screen.zw * 32.0).rgb, reach)));
-		float here = Luma(ReadGamma(source));
-		// How lit this part of the scene is, over about an eighth of the screen around the pixel.
-		// Judged in linear light, so it reads the same whether the blur was averaged in gamma
-		// (a UNORM back buffer) or in linear light (an sRGB view).
-		float scene = LumaLinear(ReadLinear(TENT9(Tex7, i.uv, Screen.zw * 128.0).rgb));
-		float contrast = saturate((here - around) / max(here, 0.05));
-
-		// Moderate contrast is a surface next to a darker one: deepen it. Extreme contrast is a
-		// light against darkness: leave it, as the eye would.
-		float occlusion = contrast * (1.0 - smoothstep(0.45, 0.7, contrast));
-		float protect = smoothstep(0.05, 0.2, scene);
-
-		g *= 1.0 - min(saturate(OBSCURANCE) * occlusion * protect * 0.9, 0.35);
-	}
-
 	// Monocular cues: depth-free hints that help shapes read against their background, from the
 	// image alone. Separation is local contrast compressed so edges do not halo; flat, low-contrast
 	// areas recede a little (aerial perspective); the edges of the screen soften slightly so the
@@ -2054,7 +2079,7 @@ float4 PS_Grade(VSOut i) : SV_Target
 	if (VIGNETTE > 0.0)
 	{
 		float2 d = (i.uv - 0.5) * float2(Screen.x / Screen.y, 1.0);
-		g *= 1.0 - VIGNETTE * smoothstep(0.35, 1.0, length(d) * 1.1);
+		g *= 1.0 - VIGNETTE * smoothstep(0.35, 1.0, length(d) * 1.1) * lerp(0.55, 1.0, far);
 	}
 
 	// Surface grain from PS_Grain: it travels with the surfaces, so it reads as texture rather than
@@ -2714,13 +2739,21 @@ float4 PS_Final(VSOut i) : SV_Target
 
 	// Film grain goes last, after FSR and sharpening, as AMD's FSR guide asks: anything after it
 	// (resampling, sharpening, motion blur) would smear or harden the grain. Not on the debug views.
+	// Film grain, not pixel noise: clumps a little larger than a pixel, mostly a luminance grain
+	// with a touch of colour, densest in the shadows and midtones and all but gone in the highlights
+	// and in true black, which is how a negative's grain lies.
 	if (GRAIN > 0.0 && DEPTH_VIEW < 0.5 && MOTION_VIEW < 0.5)
 	{
 		float3 p = ReadGamma(result);
-		float n = Hash(i.uv * Screen.xy + frac(TIME) * 1000.0) - 0.5;
-		float mid = 1.0 - abs(Luma(p) * 2.0 - 1.0);
+		float2 cell = floor(i.uv * Screen.xy / 1.5);
+		float2 t = float2(frac(TIME) * 1000.0, frac(TIME * 0.37) * 700.0);
+		float nl = Hash(cell + t) - 0.5;
+		float3 nc = float3(Hash(cell + t + 11.0), Hash(cell + t + 23.0), Hash(cell + t + 37.0)) - 0.5;
+		float3 n = lerp(float3(nl, nl, nl), nc, 0.35);
+		float l = Luma(p);
+		float density = (0.25 + 0.75 * pow(1.0 - l, 1.3)) * saturate(l * 6.0);
 
-		result = WriteGamma(saturate(p + n * GRAIN * 0.12 * (0.35 + 0.65 * mid)));
+		result = WriteGamma(saturate(p + n * GRAIN * 0.16 * density));
 	}
 
 	// SMAA T2x and TAA blend frames, which averages the grade's dither away. Dither again here,
