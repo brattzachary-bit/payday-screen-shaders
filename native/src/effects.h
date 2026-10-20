@@ -44,6 +44,8 @@ class Effects
 	// sampled in place: a copy does not need the game's texture to have been created as a shader
 	// resource, which is not something a mod gets to choose.
 	bool Run(ID3D11Device* device, ID3D11DeviceContext1* ctx, ID3D11Texture2D* target, ID3D11RenderTargetView* targetRtv, DXGI_FORMAT rtvFormat, const Settings& settings, ID3D11Texture2D* depth = nullptr);
+	// The half-resolution motion found this frame (dev/nativebuild/test reads it back).
+	ID3D11Texture2D* MotionTexture() const { return m_motion[0].tex; }
 
 	// Why the depth effects are not running, for the status file. Empty means no complaint.
 	const std::string& DepthError() const { return m_depthError; }

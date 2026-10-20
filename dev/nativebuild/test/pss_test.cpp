@@ -24,6 +24,9 @@
 #include "log.h"
 #include "state.h"
 
+// plugin.cpp owns this in the DLL (the thread SuperBLT loaded it on); the test has no plugin.cpp.
+DWORD g_luaThread = 0;
+
 static int g_passed = 0;
 static int g_failed = 0;
 static const char* g_dirt = ""; // the lens dirt blob, when the runner passes one
@@ -1289,11 +1292,32 @@ static void TestAdvanced(ID3D11Device* dev, ID3D11DeviceContext1* ctx, const cha
 		Settings taa = plain;
 		taa.p[P_TAA] = 1.0f;
 
+		// Since 0.6 temporal antialiasing reprojects with the camera (PS_Taa) and only runs with two
+		// consecutive valid poses one frame apart. The half-pixel shift of the slope image is declared
+		// as the camera jitter: fwd turned by half a pixel, outFwd (the un-jittered camera) not.
+		auto pose = [&](int frame, float jitterPx) {
+			CameraPose c;
+			c.valid = true;
+			float a = jitterPx * 2.0f * taa.p[P_CAMERA_TAN_X] / (float)W; // radians for small angles
+			float right[3] = {cosf(a), -sinf(a), 0.0f}, up[3] = {0.0f, 0.0f, 1.0f}, fwd[3] = {sinf(a), cosf(a), 0.0f};
+			float outRight[3] = {1.0f, 0.0f, 0.0f}, outFwd[3] = {0.0f, 1.0f, 0.0f};
+			memcpy(c.right, right, sizeof(right)); memcpy(c.up, up, sizeof(up)); memcpy(c.fwd, fwd, sizeof(fwd));
+			memcpy(c.outRight, outRight, sizeof(outRight)); memcpy(c.outUp, up, sizeof(up)); memcpy(c.outFwd, outFwd, sizeof(outFwd));
+			c.tan[0] = taa.p[P_CAMERA_TAN_X]; c.tan[1] = taa.p[P_CAMERA_TAN_Y];
+			c.frame = (float)(frame + 1);
+			c.jitter[0] = jitterPx; c.jitter[1] = 0.0f;
+			c.luaJitter = 1;
+			return c;
+		};
+
 		Effects still, accumulating;
 		std::vector<uint8_t> jitterA, jitterB, taaA, taaB;
 
 		for (int frame = 0; frame < 12; frame++)
 		{
+			taa.recent[0] = pose(frame, frame % 2 ? 0.5f : 0.0f);
+			taa.p[P_JITTER_X] = frame % 2 ? 0.5f : 0.0f;
+			taa.p[P_CAMERA_FRAME] = (float)(frame + 1);
 			jitterA = render(still, slope(frame % 2 ? 0.5f : 0.0f), flatDepth, plain, input);
 			taaA = render(accumulating, slope(frame % 2 ? 0.5f : 0.0f), flatDepth, taa, input);
 
@@ -1883,8 +1907,8 @@ static void TestHooks(const char* shader)
 	}
 
 	Status st = State::GetStatus();
-	Check("hooks install on a DXVK device", st.hooksInstalled);
 	Check("the Present hook installs", st.presentHooked);
+	// Since 0.5.x the game's own context is hooked on its first Present, not here: checked after the frames.
 
 	WNDCLASSEXA wc = {};
 	wc.cbSize = sizeof(wc);
@@ -2057,6 +2081,7 @@ static void TestHooks(const char* shader)
 		char detail[96];
 		snprintf(detail, sizeof(detail), "world %u,%u,%u", world[0], world[1], world[2]);
 		// 255 = ran too early (the composite overwrote it), 63 = ran twice.
+		Check("hooks install on a DXVK device", State::GetStatus().hooksInstalled);
 		Check("the world is processed once, after its final composite", world[0] > 110 && world[0] < 145, detail);
 
 		snprintf(detail, sizeof(detail), "hud %u,%u,%u", panel[0], panel[1], panel[2]);

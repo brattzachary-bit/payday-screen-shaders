@@ -19,8 +19,8 @@ import sys
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
-MOD = os.path.join(ROOT, "Payday Screen Shaders")
+# dev/nativebuild/ lives inside the mod since 0.9.0.
+MOD = os.path.dirname(os.path.dirname(HERE))
 OUT = os.path.join(HERE, "out")
 
 
@@ -66,7 +66,9 @@ def native_lines(overrides):
         lines.append("%s %s" % (p["key"], n))
 
     luts = sorted(f for f in os.listdir(os.path.join(MOD, "luts")) if f.lower().endswith(".cube"))
-    lut = luts[int(values.get("lut", "1")) - 1]
+    # lua/core.lua: 1 is no LUT, then the files in name order (so 2 is the first file).
+    index = int(float(values.get("lut", "1"))) - 2
+    lut = luts[index] if 0 <= index < len(luts) else None
     return lines, lut
 
 
