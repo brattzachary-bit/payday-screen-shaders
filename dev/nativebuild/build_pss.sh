@@ -5,6 +5,7 @@
 #   sh build_pss.sh          -> native/pss.dll
 #   sh build_pss.sh test     -> also dev/nativebuild/out/pss_test.exe (stale, see dev/README.md)
 #   sh build_pss.sh memory   -> also dev/nativebuild/out/test-memory.exe (the memory bridge test)
+#   sh build_pss.sh shaders  -> also dev/nativebuild/out/shadercheck.exe (compiles every shader entry under Wine)
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -41,6 +42,12 @@ $CXX -shared -static -static-libgcc -static-libstdc++ -s \
 echo "built native/pss.dll"
 x86_64-w64-mingw32-objdump -p /mod/native/pss.dll | sed -n "/Export Address/,/^$/p" | grep -E "SuperBLT|MODULE|SBLT" || true
 x86_64-w64-mingw32-objdump -p /mod/native/pss.dll | grep "DLL Name" || true
+
+if [ "$WANT_TEST" = "shaders" ]; then
+	# Compiles every shader entry point with the d3dcompiler_47 Wine provides (vkd3d-shader).
+	$CXX -std=c++17 -O1 -Wall /build/test/shadercheck.cpp -static -static-libgcc -static-libstdc++ -o $OUT/shadercheck.exe
+	echo "built out/shadercheck.exe"
+fi
 
 if [ "$WANT_TEST" = "memory" ]; then
 	# The memory bridge test (dev/nativebuild/test/memory): no D3D, runs under plain Wine.

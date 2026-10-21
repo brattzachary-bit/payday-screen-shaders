@@ -40,8 +40,8 @@ enum ParamIndex
 	P_DEBAND,
 	P_DITHER,
 	P_CHROMATIC,
-	P_OBSCURANCE,
-	P_OBSCURANCE_RADIUS,
+	P_UNUSED_35, // was obscurance (removed in 0.11: real occlusion made it redundant and it haloed the sky)
+	P_UNUSED_36, // was obscurance_radius
 	P_COLOR_BLOOM,
 	P_COLOR_BLOOM_RADIUS,
 	P_CUES,
@@ -50,12 +50,12 @@ enum ParamIndex
 	P_CUES_FOCUS,
 	P_DIRT,
 	P_DIRT_OFFSET,
-	P_HALATION,
-	P_HALATION_THRESHOLD,
-	P_HALATION_TINT,
-	P_HALATION_RADIUS,
-	P_UNUSED_49, // was the Panini projection; kept so the slots after it do not move
-	P_UNUSED_50, // was the spherical projection; kept so the slots after it do not move
+	P_FLARE,       // lens flare: ghosts and an anamorphic streak from the bright light in the frame
+	P_UNUSED_46,   // was halation_threshold
+	P_BLOOM_TINT,  // warmth of the bloom (halation folded into it in 0.11)
+	P_FLARE_LENGTH, // how long the streak is
+	P_PANINI,    // cylindrical (Panini) projection of the finished frame, from the real field of view
+	P_SPHERICAL, // stereographic (fisheye) projection, likewise
 	P_UPSCALE,           // FSR 1.0: redraw the finished frame larger, then fit it back to the screen
 	P_UPSCALE_SCALE,     // how much larger, 1.25x to 2x
 	P_UPSCALE_SHARPNESS, // RCAS strength, applied at screen size; it replaces CAS while FSR is on

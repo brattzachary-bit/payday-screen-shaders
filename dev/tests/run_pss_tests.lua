@@ -116,7 +116,7 @@ for i, name in ipairs(native_order) do
 end
 check("every shader #define reads the constant buffer slot params.h gives it", hlsl_ok, hlsl_detail)
 
-for entry in ("VS_Fullscreen PS_FXAA PS_Luma PS_Adapt PS_BloomPrefilter PS_BloomDown PS_BloomUp PS_Grade PS_Final PS_WideDown PS_TintPrefilter PS_HaloPrefilter PS_LightInfo PS_Easu PS_Ao PS_AoBlur PS_SmaaEdges PS_SmaaWeights PS_SmaaBlend PS_Focus PS_DofPrepare PS_DofBlur PS_DofFill PS_DofComposite PS_Il PS_Rtgi PS_Ssr PS_DepthBlur PS_MotionInput PS_MotionSearch PS_Temporal PS_MotionBlur PS_ShaftMask PS_Shafts PS_Grain PS_Downsample PS_LinearDepth PS_SmaaT2x PS_Taa PS_TaaSync"):gmatch("%S+") do
+for entry in ("VS_Fullscreen PS_FXAA PS_Luma PS_Adapt PS_BloomPrefilter PS_BloomDown PS_BloomUp PS_Grade PS_Final PS_WideDown PS_TintPrefilter PS_LightInfo PS_Easu PS_Ao PS_AoBlur PS_SmaaEdges PS_SmaaWeights PS_SmaaBlend PS_Focus PS_DofPrepare PS_DofBlur PS_DofFill PS_DofComposite PS_Il PS_Rtgi PS_Ssr PS_DepthBlur PS_MotionInput PS_MotionSearch PS_Temporal PS_MotionBlur PS_ShaftMask PS_Shafts PS_Grain PS_Downsample PS_LinearDepth PS_SmaaT2x PS_Taa PS_TaaSync"):gmatch("%S+") do
 	check("shader entry point " .. entry .. " exists", hlsl:match("[%s]" .. entry .. "%(") ~= nil)
 	check("the plugin compiles entry point " .. entry, read(ROOT .. "native/src/effects.cpp"):match('"' .. entry .. '"') ~= nil)
 end
@@ -127,21 +127,28 @@ for _, param in ipairs(PSS.PARAMS) do
 	end
 end
 -- The colour-only shape effects are still there, but with real occlusion and haze shipping on, they
--- matter only where there is no depth: obscurance steps aside entirely, and the cues stay gentle.
-check("the colour-only shape effects are still on for when there is no depth", PSS.BY_KEY.obscurance_on.default and PSS.BY_KEY.cues_on.default and PSS.BY_KEY.cues.default <= 0.35)
+-- matter only where there is no depth: the cues stay gentle (obscurance went in 0.11).
+check("the colour-only cues are still on for when there is no depth, gently", PSS.BY_KEY.cues_on.default and PSS.BY_KEY.cues.default <= 0.35)
+check("0.11: obscurance and halation are gone, the flare and bloom warmth are in", PSS.BY_KEY.obscurance == nil and PSS.BY_KEY.halation == nil and PSS.BY_KEY.flare_on.default == true and PSS.BY_KEY.flare.gate == "flare_on" and PSS.BY_KEY.bloom_tint ~= nil)
+check("0.11: a calmer default look", PSS.BY_KEY.bloom.default <= 0.8 and PSS.BY_KEY.bloom_threshold.default >= 0.7 and PSS.BY_KEY.upscale.default == false and PSS.BY_KEY.upscale_scale.default == 1.5 and PSS.BY_KEY.sharpen.default <= 0.35)
 
 -- 0.3.0: lens dirt is on but gentle; halation and both projections ship off.
 check("lens dirt is available but off in the shipped look", PSS.BY_KEY.dirt_on.default == false and PSS.BY_KEY.dirt.min == 0)
-check("halation ships off, and the projections are gone for good", PSS.BY_KEY.halation_on.default == false and PSS.BY_KEY.spherical_on == nil and PSS.BY_KEY.panini_on == nil)
+-- 0.10.0: the projections are back (PS_Final, from the real field of view), off until switched on,
+-- in the two constant buffer slots they always had so nothing after them moved.
+check("the projections are back, off by default, and gated by their toggles", PSS.BY_KEY.panini_on and PSS.BY_KEY.panini_on.default == false and PSS.BY_KEY.panini.gate == "panini_on" and PSS.BY_KEY.spherical_on.default == false and PSS.BY_KEY.spherical.gate == "spherical_on")
+check("the projections sit in their old slots 49 and 50", native_order[50] == "panini" and native_order[51] == "spherical", tostring(native_order[50]) .. "," .. tostring(native_order[51]))
+check("a switched-off projection sends 0 to the plugin", PSS:native_value(PSS.BY_KEY.panini, 0.45) == 0 and PSS:native_value(PSS.BY_KEY.spherical, 0.3) == 0)
+check("PS_Final warps through Project() from the camera's field of view", read(ROOT .. "shaders/pss.hlsl"):match("float2 Project%(float2 uv%)") ~= nil and read(ROOT .. "shaders/pss.hlsl"):match("float2 uv = Project%(i%.uv%);") ~= nil and read(ROOT .. "shaders/pss.hlsl"):match("CAMERA_TAN_X, 0%.05") ~= nil)
 local dirt_blob = read(ROOT .. "shaders/lens_dirt.bin")
 check("the lens dirt texture ships with the mod", dirt_blob ~= nil and dirt_blob:sub(1, 4) == "PSSD" and #dirt_blob > 100000, dirt_blob and #dirt_blob)
 
 -- 0.4.0: FSR 1.0 upscaling. The whole stage ships off, EASU feeds RCAS, the final pass fits the
 -- result back to the screen, and the existing CAS pass must not sharpen the same frame twice.
 local effects_cpp = read(ROOT .. "native/src/effects.cpp")
-check("FSR upscaling ships on in the Enhanced look", PSS.BY_KEY.upscale.default == true and PSS.BY_KEY.upscale_scale.default >= 1.25)
+check("FSR ships off at 1.5x since 0.11 (a projection switches it on by itself)", PSS.BY_KEY.upscale.default == false and PSS.BY_KEY.upscale_scale.default == 1.5)
 check("the upscale factor runs 0.5x to 2x, in steps of 0.05 (below 1x it is the render scale cleanup)", PSS.BY_KEY.upscale_scale.min == 0.5 and PSS.BY_KEY.upscale_scale.max == 2 and PSS.BY_KEY.upscale_scale.step == 0.05)
-check("EASU and RCAS have their own sharpness, separate from CAS", PSS.BY_KEY.upscale_sharpness ~= nil and PSS.BY_KEY.sharpen.default == 0.45)
+check("EASU and RCAS have their own sharpness, separate from CAS", PSS.BY_KEY.upscale_sharpness ~= nil and PSS.BY_KEY.sharpen.default == 0.35)
 check("the final pass resolves the upscaled buffer instead of point sampling it", hlsl:match("float3 ResolveUpscaled%(") ~= nil and hlsl:match("upscaled %? ResolveUpscaled%(uv%)") ~= nil)
 check("the CAS pass is bypassed while FSR upscaling is on", hlsl:match("SHARPEN > 0%.001 && !upscaled") ~= nil)
 check("RCAS is applied at screen size, in the final pass", hlsl:match("PS_Final") ~= nil and hlsl:match("Rcas") ~= nil)
@@ -250,8 +257,7 @@ check("height fog needs the camera, and stops without it", hlsl:match("HFOG > 0%
 
 -- The enhanced defaults: what an improved PAYDAY 2 looks like, aimed at PAYDAY 3.
 check("the enhanced defaults switch on occlusion, bounce light, ray traced lighting, reflections, haze, shafts and tone mapping", (function()
-	for _, key in ipairs({"ao_on", "il_on", "rtgi_on", "ssr_on", "fog_on", "shafts_on", "ltm_on", "dof_on", "temporal",
-		"upscale", "demoire_on", "detail_on", "mblur_on"}) do
+	for _, key in ipairs({"ao_on", "il_on", "rtgi_on", "ssr_on", "fog_on", "shafts_on", "ltm_on", "dof_on", "temporal", "demoire_on", "detail_on", "mblur_on"}) do
 		if PSS.BY_KEY[key].default ~= true then return false, key end
 	end
 	return true
@@ -643,13 +649,14 @@ check("applying a preset starts from the defaults, so it is the same look howeve
 	return performance and clean and enhanced
 end)())
 check("the diagnostics and the effects the author left off stay off", (function()
-	for _, key in ipairs({"hfog_on", "halation_on", "motion_view", "depth_view", "split"}) do
+	for _, key in ipairs({"hfog_on", "motion_view", "depth_view", "split"}) do
 		if PSS.BY_KEY[key].default ~= false then return false, key end
 	end
 	-- Film grain stays off: the surface grain does that job without crawling over the screen.
 	return PSS.BY_KEY.grain.default == 0
 end)())
-check("obscurance steps aside for real ambient occlusion, in the shader and the plugin", hlsl:match("OBSCURANCE > 0%.0 && !%(HaveDepth%(%) && AO > 0%.0%)") ~= nil and effects_cpp:match("P_OBSCURANCE%] > 0%.001f && !%(haveDepth && p%[P_AO%] > 0%.001f%)") ~= nil)
+check("bounced light respects the occlusion in the shader", hlsl:match("gathered %*= lerp%(1%.0, saturate%(AoTex") ~= nil)
+check("a projection switches FSR on by itself", (function() local u = PSS.settings.upscale; PSS.settings.upscale = false; PSS.settings.panini_on = true; local on = PSS:native_value(PSS.BY_KEY.upscale, false); PSS.settings.panini_on = false; local off = PSS:native_value(PSS.BY_KEY.upscale, false); PSS.settings.upscale = u; return on == 1 and off == 0 end)())
 check("temporal effects use interleaved gradient noise", hlsl:match("float InterleavedGradient%(") ~= nil and hlsl:match("5%.588238 %* frame") ~= nil)
 check("occlusion keeps light in bright creases (multi-bounce)", hlsl:match("2%.0404 %* albedo") ~= nil)
 check("bloom's prefilter is a Karis average", hlsl:match("1%.0 / %(1%.0 %+ LumaLinear%(a%)%)") ~= nil)
@@ -686,7 +693,7 @@ end)())
 check("the no-depth warning is a pattern no effect can produce, not a colour tint", hlsl:match("DEPTH_VIEW > 0%.5") ~= nil and hlsl:match("float3%(check, 0%.0, check%)") ~= nil)
 
 -- ---- settings ----
-check("defaults load", PSS.settings.enabled == true and PSS.settings.sharpen == 0.45)
+check("defaults load", PSS.settings.enabled == true and PSS.settings.sharpen == 0.35)
 
 PSS.settings.sharpen = 99
 PSS.settings.gamma = "nonsense"
@@ -749,11 +756,11 @@ for _, param in ipairs(PSS.PARAMS) do
 	if param.lua_only and L[param.key] ~= nil then every = false end
 end
 check("every parameter is in the file, and the Lua-only switches are not", every)
-check("a switched-on effect sends its strength", L.obscurance == PSS.settings.obscurance and L.cues == PSS.settings.cues)
-PSS:set("obscurance_on", false)
-check("switching an effect off sends strength 0", live().obscurance == 0 and PSS.settings.obscurance > 0)
-PSS:set("obscurance_on", true)
-check("and switching it back on sends the strength again", live().obscurance == PSS.settings.obscurance)
+check("a switched-on effect sends its strength", L.flare == PSS.settings.flare and L.cues == PSS.settings.cues)
+PSS:set("flare_on", false)
+check("switching an effect off sends strength 0", live().flare == 0 and PSS.settings.flare > 0)
+PSS:set("flare_on", true)
+check("and switching it back on sends the strength again", live().flare == PSS.settings.flare)
 
 PSS:tick(0.2)
 check("updates are throttled", live().tick == 1)
@@ -917,15 +924,15 @@ check("titles are four words at most", #long_titles == 0, table.concat(long_titl
 check("descriptions are 200 characters at most", #long_descs == 0, table.concat(long_descs, ", "))
 
 -- Reset this page: asks first, resets only its page, shows the new values.
-PSS:set("obscurance", 0.9)
+PSS:set("cues", 0.9)
 PSS:set("exposure", 1.5)
 DIALOGS = {}
 MenuCallbackHandler.pss_reset_page(nil, { name = function() return "pss_reset_page_pss_menu_depth" end })
-check("Reset this page asks first", #DIALOGS == 1 and PSS.settings.obscurance == 0.9 and DIALOGS[1].options[2].is_cancel_button)
+check("Reset this page asks first", #DIALOGS == 1 and PSS.settings.cues == 0.9 and DIALOGS[1].options[2].is_cancel_button)
 DIALOGS[1].options[1].callback()
-check("Reset this page resets that page", PSS.settings.obscurance == PSS.BY_KEY.obscurance.default)
+check("Reset this page resets that page", PSS.settings.cues == PSS.BY_KEY.cues.default)
 check("and leaves other pages alone", PSS.settings.exposure == 1.5)
-check("and shows the new value on the page", NODES.pss_menu_depth._set.obscurance == PSS.BY_KEY.obscurance.default)
+check("and shows the new value on the page", NODES.pss_menu_depth._set.cues == PSS.BY_KEY.cues.default)
 check("toggles are shown as on/off", NODES.pss_menu_depth._set.cues_on == "on")
 DIALOGS = {}
 MenuCallbackHandler.pss_reset_all()

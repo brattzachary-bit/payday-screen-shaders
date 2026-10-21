@@ -233,7 +233,6 @@ void Effects::ReleaseTargets()
 	{
 		m_wide[i].Release();
 		m_tint[i].Release();
-		m_halo[i].Release();
 	}
 
 	m_light.Release();
@@ -272,7 +271,6 @@ void Effects::ReleaseShaders()
 	SafeRelease(m_psFinal);
 	SafeRelease(m_psWideDown);
 	SafeRelease(m_psTintPrefilter);
-	SafeRelease(m_psHaloPrefilter);
 	SafeRelease(m_psLightInfo);
 	SafeRelease(m_psEasu);
 	SafeRelease(m_psLinearDepth);
@@ -516,7 +514,6 @@ bool Effects::Compile(const std::string& path)
 		{"PS_Final", false, &m_psFinal},
 		{"PS_WideDown", false, &m_psWideDown},
 		{"PS_TintPrefilter", false, &m_psTintPrefilter},
-		{"PS_HaloPrefilter", false, &m_psHaloPrefilter},
 		{"PS_LightInfo", false, &m_psLightInfo},
 		{"PS_Easu", false, &m_psEasu},
 		{"PS_LinearDepth", false, &m_psLinearDepth},
@@ -974,7 +971,6 @@ bool Effects::EnsureTargets(const D3D11_TEXTURE2D_DESC& desc, DXGI_FORMAT rtvFor
 		lh = lh ? lh : 1;
 		ok = MakeTexture(m_device, m_wide[i], lw, lh, DXGI_FORMAT_R16G16B16A16_FLOAT, true, false);
 		ok = ok && MakeTexture(m_device, m_tint[i], lw, lh, DXGI_FORMAT_R16G16B16A16_FLOAT, true, false);
-		ok = ok && MakeTexture(m_device, m_halo[i], lw, lh, DXGI_FORMAT_R16G16B16A16_FLOAT, true, false);
 	}
 
 	// One pixel: where the bright light in the frame is, and how much of it there is (lens dirt).
@@ -1753,10 +1749,9 @@ bool Effects::Run(ID3D11Device* device, ID3D11DeviceContext1* ctx, ID3D11Texture
 
 	bool clarity = fabs(p[P_CLARITY]) > 0.001f;
 	// Obscurance steps aside for real ambient occlusion (see PS_Grade), so its chain is not built then.
-	bool obscurance = p[P_OBSCURANCE] > 0.001f && !(haveDepth && p[P_AO] > 0.001f);
 	bool colorBloom = p[P_COLOR_BLOOM] > 0.001f;
 	bool cues = p[P_CUES] > 0.001f;
-	bool halation = p[P_HALATION] > 0.001f;
+	bool flare = p[P_FLARE] > 0.001f;
 	bool dirt = p[P_DIRT] > 0.001f && m_dirtSrv != nullptr;
 	bool ao = haveDepth && p[P_AO] > 0.001f;
 	bool il = haveDepth && p[P_IL] > 0.001f;
@@ -1786,8 +1781,8 @@ bool Effects::Run(ID3D11Device* device, ID3D11DeviceContext1* ctx, ID3D11Texture
 		il = rtgi = ssr = shafts = mblur = needMotion = motionView = surfaceGrain = taa = t2x = false;
 	}
 
-	bool lightInfo = dirt || shafts || fogGlow;
-	bool wide = obscurance || cues || ltm;
+	bool lightInfo = dirt || shafts || fogGlow || flare;
+	bool wide = cues || ltm;
 	bool quarter = clarity || cues || ltm;
 
 	float frame[8 + PARAM_SLOTS] = {};
@@ -2107,7 +2102,7 @@ bool Effects::Run(ID3D11Device* device, ID3D11DeviceContext1* ctx, ID3D11Texture
 
 	ID3D11ShaderResourceView* bloom = nullptr;
 
-	if (p[P_BLOOM] > 0.001f)
+	if (p[P_BLOOM] > 0.001f || flare) // the lens flare is drawn from the bloom chain
 	{
 		Pass(ctx, m_psBloomPrefilter, m_down[0].rtv, m_down[0].w, m_down[0].h, w, h, &current, 1);
 
@@ -2128,13 +2123,13 @@ bool Effects::Run(ID3D11Device* device, ID3D11DeviceContext1* ctx, ID3D11Texture
 
 	// Half and quarter resolution copies. Clarity and the cues read the quarter one; the wide
 	// chains below start from it, so everything shares these two passes.
-	if (quarter || wide || colorBloom || halation || lightInfo || ssr)
+	if (quarter || wide || colorBloom || lightInfo || ssr)
 	{
 		Pass(ctx, m_psBloomDown, m_blur[0].rtv, m_blur[0].w, m_blur[0].h, w, h, &current, 1);
 		Pass(ctx, m_psBloomDown, m_blur[1].rtv, m_blur[1].w, m_blur[1].h, (float)m_blur[0].w, (float)m_blur[0].h, &m_blur[0].srv, 1);
 	}
 
-	// The wide blur for obscurance, the cues and local tone mapping: 1/8, 1/16 and 1/32 of the screen.
+	// The wide blur for the cues and local tone mapping: 1/8, 1/16 and 1/32 of the screen.
 	if (wide)
 	{
 		const RenderTexture* from = &m_blur[1];
@@ -2156,13 +2151,6 @@ bool Effects::Run(ID3D11Device* device, ID3D11DeviceContext1* ctx, ID3D11Texture
 	}
 
 	// Halation: only the brightest highlights, blurred wider still and tinted warm in the grade.
-	if (halation)
-	{
-		Pass(ctx, m_psHaloPrefilter, m_halo[0].rtv, m_halo[0].w, m_halo[0].h, (float)m_blur[1].w, (float)m_blur[1].h, &m_blur[1].srv, 1);
-
-		for (int i = 1; i < WIDE_LEVELS; i++)
-			Pass(ctx, m_psWideDown, m_halo[i].rtv, m_halo[i].w, m_halo[i].h, (float)m_halo[i - 1].w, (float)m_halo[i - 1].h, &m_halo[i - 1].srv, 1);
-	}
 
 	// One pixel holding where the frame's bright light is and how strong it is, so the lens dirt
 	// can sit opposite it. 256 taps, one pixel: the cost does not depend on the screen size.
@@ -2303,8 +2291,8 @@ bool Effects::Run(ID3D11Device* device, ID3D11DeviceContext1* ctx, ID3D11Texture
 			colorBloom ? m_tint[WIDE_LEVELS - 1].srv : nullptr,
 			dirt ? m_dirtSrv : nullptr,
 			lightInfo ? m_light.srv : nullptr,
-			halation ? m_halo[1].srv : nullptr,
-			halation ? m_halo[WIDE_LEVELS - 1].srv : nullptr,
+			nullptr,
+			nullptr,
 			haveDepth ? m_depthLinear.srv : nullptr,
 			ao ? m_aoBlur.srv : nullptr,
 		};

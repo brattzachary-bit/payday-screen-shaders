@@ -12,13 +12,27 @@ Everything the game needs is in the repository root (`mod.txt`, `lua/`, `shaders
 * `sh dev/nativebuild/build_pss.sh test` also builds the offline native test
   (`dev/nativebuild/test/pss_test.cpp`) into `dev/nativebuild/out/pss_test.exe`. Run it with Wine
   or Proton (it needs a prefix with d3d11 and `libvkd3d*-1.dll`).
-* Known issue (2026-10-18): `dev/nativebuild/test/pss_test.cpp` predates the 0.7.5 fork merge and
-  no longer compiles (it still references the removed Panini/spherical projections and
-  `Effects::MotionTexture`). The DLL build is unaffected; the test needs updating to the current
-  effect chain.
+* The offline render test (`build_pss.sh test`, 153 checks) needs a Direct3D 11 device. Run it with
+  Proton's Wine and DXVK, the game's own stack under Proton:
+
+      P="$HOME/.steam/steam/steamapps/common/Proton 10.0/files"
+      export WINEPREFIX=/tmp/pss-pfx WINEDEBUG=-all
+      "$P/bin/wine" wineboot -u
+      cp "$P"/lib/vkd3d/x86_64-windows/libvkd3d*-1.dll "$WINEPREFIX/drive_c/windows/system32/"
+      cd <a folder holding pss_test.exe, pss.hlsl, smaa.hlsl, smaa_*.bin, lens_dirt.bin, a .cube>
+      "$P/bin/wine" pss_test.exe pss.hlsl lut.cube lens_dirt.bin
+
+  Host Wine with wined3d also runs it (151 checks); only the hook test is DXVK-specific. The run
+  prints the GPU cost tables for FSR, antialiasing, depth of field and the depth effects.
+* `pss_test.exe --render` pushes one RGBA frame through the whole chain with a settings file;
+  `dev/nativebuild/preview.py` wraps it for a screenshot with the shipped defaults plus overrides.
 * Shaders must compile with vkd3d-shader as well as d3dcompiler: under Proton the game's
   `d3dcompiler_47` is Wine's.
 * The DLL cannot be reloaded in a running game: a new build needs a game restart.
+
+* `sh dev/nativebuild/build_pss.sh shaders` builds `dev/nativebuild/out/shadercheck.exe`; run it under Wine
+  with the path to `shaders/pss.hlsl` and it compiles every entry point with Wine's d3dcompiler_47
+  (vkd3d-shader), which is what the game uses under Proton. Do this after every shader change.
 
 ## Lua side
 
